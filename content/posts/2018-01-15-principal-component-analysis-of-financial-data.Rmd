@@ -1,0 +1,807 @@
+---
+title: Principal Component Analysis of Financial Data
+author: Orest Alickolli
+date: '2018-01-15'
+slug: principal-component-analysis-of-financial-data
+categories:
+  - R
+tags:
+  - PCA
+  - TimeSeries
+---
+
+Data from the part 30 years regarding yields of US Treasury bonds of different maturities have been collected. In this project, we deliberately explore the data to study correlation effects in linear predictors and the use of PCA to reduce dimensionality. We will be able to create through PCA a two-dimensional tableau and explore historical events in it. 
+
+
+Read the data and visualize
+
+```{r}
+datapath<-"/Users/Orest/Desktop/Statistical Analysis/Final Project"
+AssignmentData<- read.csv(file = paste(datapath,"RegressionAssignmentData2014.csv",sep="/"),
+           row.names=1,header=TRUE,sep=",")
+head(AssignmentData)
+```
+
+The first 7 variables (input variables) are the daily records of the US Treasury yields to maturity.  
+Plot the input variables.
+
+```{r}
+matplot(AssignmentData[,-c(8,9,10)],type='l')
+```
+
+Plot the input variables together with the output variable.
+
+```{r}
+matplot(AssignmentData[,-c(9,10)],type='l')
+```
+
+# Step 2
+
+Estimate simple regression model with each of the input variables and the output variable given in AssignmentData. Store coefficients for each input variable.
+
+The following code gives an example of the analysis for the first input variable.
+
+```{r}
+Input1.linear.Model <- lm(Output1~USGG3M, AssignmentData)
+Coefficients.Input1 <- Input1.linear.Model$coefficients
+summary(Input1.linear.Model)
+```
+
+```{r}
+c(Total.Variance=var(AssignmentData[,8]),Unexplained.Variance=summary(Input1.linear.Model)$sigma^2)
+Coefficients.Input1
+matplot(AssignmentData[,8],type="l",xaxt="n")
+lines(Input1.linear.Model$fitted.values,col="red")
+```
+
+Check relevance of the estimated parameters and the model as a whole, amount of correlation explained.  
+
+**Answer:** The intercept and slope are both significant parameters in the linear regression model between the Output variable and the YTM for the 3M Treasury Bill.  
+This is indicated by:  
+* p-values -  The p-values shown are assiocated with the t-test which evaluates the null hypothesis:  
+$H_0$ : Parameter $B_i$ is equal to 0.
+Since both p-values are close to 0 and below any reasonable significance level, we can reject the null hypothesis and conclude that the two parameters are significant (different from 0.).  
+*  Standard errors - The standard errors calculated are both several orders of magnitude smaller than the parameter estimated. This confirms the alternate hypothesis that the parameters are different from 0.    
+
+R-squared indicates the amount of correlation explained by the linear model as a proportion of the total variance in the observed data (SSM/SST). The R-squared value for this regression model is 0.9628. This indicates a fairly high correlation between the predictor and the output. 
+
+An identical analysis can be performed on the other models. 
+
+
+Repeat fitting linear models with the same output Output1 and each of the inputs: USGG6M, USGG2YR, USGG3YR, USGG5YR, USGG10YR and  USGG30YR.
+
+Create the other models
+
+```{r}
+# Create a list of all linear models. 
+All.Linear.Models <- apply(AssignmentData[,1:7], 2, function(x) lm(AssignmentData$Output1~x))
+```
+
+Collect all slopes and intercepts in one table and print this table. Try to do it in one line using apply() function.
+
+```{r}
+All.Parameters <- rbind.data.frame(lapply(All.Linear.Models, coefficients)) 
+rownames(All.Parameters) <- c("Intercept","Slope")
+# Display Table of Results
+All.Parameters
+```
+
+# Step 3
+
+Fit linear regression models using single output (column 8 Output1) as input and each of the original inputs as outputs.
+Collect all slopes and  intercepts in one table and print this table.
+
+```{r}
+All.Linear.Models.Inverse <- apply(AssignmentData[,1:7], 2, function(x) lm(x~AssignmentData$Output1))
+All.Parameters.Inverse <- rbind.data.frame(lapply(All.Linear.Models.Inverse, coefficients))
+rownames(All.Parameters.Inverse) <- c("Intercept","Slope")
+# Display Table of Results
+All.Parameters.Inverse
+```
+
+# Step 4
+
+Estimate logistic regression using all inputs and the data on FED tightening and easing cycles.
+
+```{r}
+AssignmentDataLogistic<-data.matrix(AssignmentData,rownames.force="automatic")
+```
+
+Prepare the easing-tightening data.
+Make the easing column equal to 0 during the easing periods and NA otherwise.
+Make the tightening column equal to 1 during the tightening periods and NA otherwise.
+
+```{r}
+# Create columns of easing periods (as 0s) and tightening periods (as 1s)
+EasingPeriods<-AssignmentDataLogistic[,9]
+EasingPeriods[AssignmentDataLogistic[,9]==1]<-0
+TighteningPeriods<-AssignmentDataLogistic[,10]
+# Check easing and tightening periods
+cbind(EasingPeriods,TighteningPeriods)[c(550:560,900:910,970:980),]
+```
+
+Remove the periods of neither easing nor tightening.
+
+```{r}
+All.NAs<-is.na(EasingPeriods)&is.na(TighteningPeriods)
+AssignmentDataLogistic.EasingTighteningOnly<-AssignmentDataLogistic
+AssignmentDataLogistic.EasingTighteningOnly[,9]<-EasingPeriods
+AssignmentDataLogistic.EasingTighteningOnly<-AssignmentDataLogistic.EasingTighteningOnly[!All.NAs,]
+AssignmentDataLogistic.EasingTighteningOnly[is.na(AssignmentDataLogistic.EasingTighteningOnly[,10]),10]<-0
+# Binary output for logistic regression is now in column 10
+```
+
+Plot the data and the binary output variable representing easing (0) and tightening (1) periods.
+
+```{r}
+matplot(AssignmentDataLogistic.EasingTighteningOnly[,-c(9,10)],type="l",ylab="Data and Binary Fed Mode")
+lines(AssignmentDataLogistic.EasingTighteningOnly[,10]*20,col="red")
+```
+
+Estimate logistic regression with 3M yields as predictors for easing/tightening output.
+
+```{r}
+LogisticModel.TighteningEasing_3M<-glm(AssignmentDataLogistic.EasingTighteningOnly[,10]~
+                                      AssignmentDataLogistic.EasingTighteningOnly[,1],family=binomial(link=logit))
+summary(LogisticModel.TighteningEasing_3M)
+
+matplot(AssignmentDataLogistic.EasingTighteningOnly[,-c(9,10)],type="l",ylab="Data and Fitted Values")
+lines(AssignmentDataLogistic.EasingTighteningOnly[,10]*20,col="red")
+lines(LogisticModel.TighteningEasing_3M$fitted.values*20,col="green")
+```
+
+Now use all inputs as predictors for logistic regression.
+
+```{r}
+LogisticModel.TighteningEasing_All<- glm(Tightening~.,family=binomial(link=logit), data=data.frame(AssignmentDataLogistic.EasingTighteningOnly)[,-c(8,9)])
+summary(LogisticModel.TighteningEasing_All)$aic
+summary(LogisticModel.TighteningEasing_All)$coefficients[,c(1,4)]
+
+# Plot
+matplot(AssignmentDataLogistic.EasingTighteningOnly[,-c(9,10)],type="l",ylab="Results of Logistic Regression")
+lines(AssignmentDataLogistic.EasingTighteningOnly[,10]*20,col="red")
+lines(LogisticModel.TighteningEasing_All$fitted.values*20,col="green")
+```
+
+Interpret the coefficients of the model and the fitted values.  
+
+**Answer:** This logistic regression model has as predictors a subset of the US Treasury YTM for various maturities. The response is a categorical variable with two levels (1 and 0/succes and failure) representing respectively the application or not of tightening policies by the FED.  
+The idea behind the logistic regression model is to use the predictors to estimate the probability of success (i.e of tightening policies in our case).   
+
+\[ \pi(x) = \beta_0 + \sum_{i=1}^{7} \beta_i x_i + \epsilon \]
+
+However in the model above , $\pi(x)$ has a different range from its right-hand-side. Therefore the logit transformation is used:  
+
+\[ \log(\frac{\pi(x)}{1-\pi(x)}) = \beta_0 + \sum_{i=1}^{7} \beta_i x_i + \epsilon \]
+
+where the left hand side now represents the log odds. 
+The *log odds* are the fitted values of this model and are shown plotted in the graph below. From the log odds we can easily obtain the associated *probabilities*, which are also shown plotted.  
+
+The coefficients of the model ($\beta$) have the following interpreation.
+
+\[ log(\frac{\pi(x+1)}{1-\pi(x+1)}) - log(\frac{\pi(x)}{1-\pi(x)}) = \beta_0 + \sum_{i=1}^{7} \beta_i(x_i+1) - \beta_0 - \sum_{i=1}^{7} \beta_ix_i\]
+
+\[\ log( \frac{\frac{\pi(x+1)}{1-\pi(x+1)} }{ \frac{\pi(x)}{1-\pi(x)} }) = \sum_{i=1}^{7} \beta_i  \]
+
+and therefore $e^{\sum\beta_i} = e^{\beta_1} e^{\beta_2} ... e^{\beta_7}$ is equal to the odds ratio. This signifies for each increase of 1 unit in the predictor variable $x_i$, the odds will increase or decrease by a factor of $e^{\beta_i}$ (depending on the sign of $\beta$).   
+
+For our current application, it signifies that an increase in YTM of instruments associated with positive $\beta's$ (6M,2YR and 10YR) will lead to an increase in odds, while and increase in YTM of instruments associated with negative $\beta's$ (3M,3YR,5YR,10YR) will lead to a decrease in odds (where odds = $\pi/(1-\pi))$).  
+
+An interesting note at this point relates to the parameter associated with the USGG3M bond. When the model was fit using only the USGG3M bond, its effect on predicting easing and tightening cycles was the opposite we notice in the full model (associated $\beta$ changed from 0.186 to -3.345).  
+I presume this is due to the fact that the YTM values are related to each other and their effect cannot be considered as purely additive.   
+
+
+Calculate and plot log-odds and probabilities. 
+
+```{r}
+# Calculate odds
+Log.Odds<-predict(LogisticModel.TighteningEasing_All)
+plot(Log.Odds,type="l")
+
+Probabilities<-1/(exp(-Log.Odds)+1)
+plot(LogisticModel.TighteningEasing_All$fitted.values,type="l",ylab="Fitted Values & Log-Odds")
+lines(Probabilities,col="red")
+```
+
+Compare probabilities with fitted values.  
+
+**Answer:** Negative log-odds values correspond to odds of less than 1 and positive log-odds correspond to odds higher than 1.  
+Odds less than 1 will correspond to a probability of less than 0.5, while odds higher than 1 will correspond to probabilities higher than 0.5. 
+
+# Step 5
+
+Compare linear regression models with different combinations of predictors.
+Select the best combination.
+
+Below we show only two of possible combinations: full model containing all 7 predictors and Null model containing only intercept, but none of the 7 predictors.
+Estimate other possible combinations.
+
+
+```{r}
+AssignmentDataRegressionComparison<-AssignmentData[,-c(9,10)]
+```
+
+```{r}
+RegressionModelComparison.Full <- lm(Output1~.,data=AssignmentDataRegressionComparison)
+```
+
+Look at coefficients, $R^2$, adjusted $R2$, degrees of freedom.  
+
+1. Coefficients
+
+```{r}
+summary(RegressionModelComparison.Full)$coefficients
+```
+
+2. $R^2$ and $R^2$-adjusted. 
+
+```{r}
+summary(RegressionModelComparison.Full)$r.squared
+summary(RegressionModelComparison.Full)$adj.r.squared
+```
+
+3. Degrees of freedom
+
+```{r}
+summary(RegressionModelComparison.Full)$df
+```
+
+Intepret the fitted model. How good is the fit? How significant are the parameters?  
+
+**Answer:** The fit is perfect with an R-squared of 1 and a virtually 0 residual standard error. All parameters are significant with p-values close to 0 and standard errors several orders of mangnitude lower than the estimated parameters. 
+
+Estimate the Null model by including only intercept.
+```{r}
+RegressionModelComparison.Null <- lm(Output1~1,data=AssignmentDataRegressionComparison)
+```
+Explore the same parameters of the fitted null model as for the full model.
+```{r}
+summary(RegressionModelComparison.Null)$coefficients
+summary(RegressionModelComparison.Null)$r.squared
+summary(RegressionModelComparison.Null)$adj.r.squared
+summary(RegressionModelComparison.Null)$df
+```
+
+Why `summary(RegressionModelComparison.Null)` does not show $R^2$?  
+
+**Answer:** By definition R is the ratio of the effect variance over the total variance. In this case we do not have effect variance since there are no predictors associated with this model. Therefore SST and SSE are equal to each other (considering the mean as the fitted model). 
+
+\[ R^2 = \frac{1-SSE}{SST} = 1 - 1 = 0\]
+
+Compare models pairwise using `anova()`
+
+```{r}
+anova(RegressionModelComparison.Full,RegressionModelComparison.Null)
+```
+
+Interpret the results of anova().
+
+**Answer:** The test shown in the output of this model comparison ANOVA, is also known as the model utility test. The two models being compared are:
+
+\[\Omega: E(Y) = \beta_0 + \beta_1 x_1 + ... + \beta_7 x_7\]
+\[\omega: E(Y) = \beta_0\]
+
+with the null hypothesis being  
+
+\[H_0 : \beta_i = 0\]
+
+where i = 1 to 7.  
+
+Since the F-value of the test is much higher than 1 and the p-value is practically 0, we can reject the null hypothesis stated above. Therefore we can say that at least one of the $\beta$ parameters is different than 0 and that the larger model is a superior fit (much superior judging from the reduction in RSS).
+
+Repeat the analysis for different combinations of input variables and select the one you think is the best. Explain your selection.
+
+A stepwise regression by dropping single terms will be used to see how removing some parameters affects the fit, and if we can simplify the model.
+
+```{r}
+step(RegressionModelComparison.Full)
+```
+
+The warning message says that the model cannot be improved, since we already have a perfect fit. We can manually try by using the drop1() and add1() functions to find a simpler model.
+
+```{r}
+drop1(RegressionModelComparison.Full)
+```
+
+Remove USGG3YR
+
+```{r}
+RegressionModelComparison.Reduced1 <- lm(Output1~.,data=AssignmentDataRegressionComparison[,-4])
+summary(RegressionModelComparison.Reduced1)
+```
+
+We still have a good fit, so we can proceed with dropping a second term
+
+```{r}
+drop1(RegressionModelComparison.Reduced1)
+```
+
+Remove USGG10YR
+
+```{r}
+RegressionModelComparison.Reduced2 <- lm(Output1~.,data=AssignmentDataRegressionComparison[,-c(6,4)])
+summary(RegressionModelComparison.Reduced2)
+```
+
+We still have an almost perfect fit. We can remove an additional term.
+
+```{r}
+drop1(RegressionModelComparison.Reduced2)
+```
+
+Remove USGG6M
+
+```{r}
+RegressionModelComparison.Reduced3 <- lm(Output1~.,data=AssignmentDataRegressionComparison[,-c(2,6,4)])
+summary(RegressionModelComparison.Reduced3)
+```
+
+Remove additional term.
+
+```{r}
+drop1(RegressionModelComparison.Reduced3)
+```
+
+Remove USGG5YR
+
+```{r}
+RegressionModelComparison.Reduced4 <- lm(Output1~.,data=AssignmentDataRegressionComparison[,-c(5,2,6,4)])
+summary(RegressionModelComparison.Reduced4)
+```
+
+We are starting to notice some reduction in the value of R-squared. However, we can attempt to drop an additional predictor.
+
+```{r}
+drop1(RegressionModelComparison.Reduced4)
+```
+
+Remove USGG3M
+
+```{r}
+RegressionModelComparison.Reduced5 <- lm(Output1~.,data=AssignmentDataRegressionComparison[,-c(1,5,2,6,4)])
+summary(RegressionModelComparison.Reduced5)
+```
+
+We can see that even with just two predictors left, we still have a very good fit. For completeness lets try to fit the model with just one predictor
+
+```{r}
+drop1(RegressionModelComparison.Reduced5)
+```
+
+Remove USGG30YR 
+
+```{r}
+RegressionModelComparison.Reduced6 <- lm(Output1~.,data=AssignmentDataRegressionComparison[,-c(7,1,5,2,6,4)])
+summary(RegressionModelComparison.Reduced6)
+```
+
+We can see that even a single predictor gives a model with a very high R squared. 
+Checking the R-squared values of all single predictor models we can see that even though there are minor variations, all single predictor models provide a very satisfactory fit. This is due to the fact that there is strong correlation between the all the models and each individual predictor can capture well the variation in the other predictors.
+
+```{r}
+lapply(All.Linear.Models,function(x) summary(x)$r.squared)
+cor(AssignmentData[,1:7])
+```
+
+# Step 6
+
+Perform rolling window analysis of the yields data.  
+Use package `zoo` for rolling window analysis.  
+Set the window width and window shift parameters for rolling window.  
+
+```{r}
+Window.width<-20 
+Window.shift<-5
+```
+
+Run rolling mean values using `rollapply()`.
+
+```{r}
+library(zoo)
+```
+
+
+Calculate rolling mean values for each variable.
+
+```{r}
+# Means
+all.means<-rollapply(AssignmentDataRegressionComparison,width=Window.width,by=Window.shift,by.column=TRUE, mean)
+head(all.means,10)
+
+# Create points at which rolling means are calculated
+Count<-1:length(AssignmentDataRegressionComparison[,1])
+Rolling.window.matrix<-rollapply(Count,width=Window.width,by=Window.shift,by.column=FALSE,FUN=function(z) z)
+Rolling.window.matrix[1:10,]
+
+# Take middle of each window
+Points.of.calculation<-Rolling.window.matrix[,10]
+Points.of.calculation[1:10]
+length(Points.of.calculation)
+
+# Insert means into the total length vector to plot the rolling mean with the original data
+Means.forPlot<-rep(NA,length(AssignmentDataRegressionComparison[,1]))
+Means.forPlot[Points.of.calculation]<-all.means[,1]
+Means.forPlot[1:50]
+
+# Assemble the matrix to plot the rolling means
+cbind(AssignmentDataRegressionComparison[,1],Means.forPlot)[1:50,]
+plot(Means.forPlot,col="red")
+lines(AssignmentDataRegressionComparison[,1])
+```
+
+Run rolling daily difference standard deviation of each variable
+
+```{r}
+# Obtain data frame of daily differences
+DailyDifferenceData <- AssignmentDataRegressionComparison[-1,] - head(AssignmentDataRegressionComparison,-1)
+head(DailyDifferenceData)
+# Apply rolling function to daily differences
+rolling.sd <-rollapply(DailyDifferenceData,width=Window.width,by=Window.shift,by.column=TRUE, FUN=sd)
+head(rolling.sd)
+
+# Identidy rolling dates
+rolling.dates<-rollapply(AssignmentDataRegressionComparison[-1,],width=Window.width,by=Window.shift,
+                         by.column=FALSE,FUN=function(z) rownames(z))
+head(rolling.dates)
+
+rownames(rolling.sd)<-rolling.dates[,10]
+head(rolling.sd)
+
+# Plot daily difference rolling standard deviation
+matplot(rolling.sd[,c(1,5,7,8)],xaxt="n",type="l",col=c("black","red","blue","green"))
+axis(side=1,at=1:1656,rownames(rolling.sd))
+```
+
+Show periods of high volatility. How is volatility related to the level of rates?
+
+**Answer:** Volatility is not related to particular values of rates. However we can notice that the periods of high volatility are the periods which are accompanied by the most significant change in rates as it can be expected. 
+
+```{r}
+# Show periods of high volatility
+high.volatility.periods<-rownames(rolling.sd)[rolling.sd[,8]>.5]
+high.volatility.periods
+```
+
+Fit linear model to rolling window data using 3 months, 5 years and 30 years variables as predictors.
+
+```{r}
+# Rolling lm coefficients
+Coefficients<-rollapply(AssignmentDataRegressionComparison,width=Window.width,by=Window.shift,by.column=FALSE,
+        FUN=function(z) coef(lm(Output1~USGG3M+USGG5YR+USGG30YR,data=as.data.frame(z))))
+rolling.dates<-rollapply(AssignmentDataRegressionComparison[,1:8],width=Window.width,by=Window.shift,by.column=FALSE, FUN=function(z) rownames(z))
+rownames(Coefficients)<-rolling.dates[,10]
+Coefficients[1:10,]
+```
+
+Look at pairwise X-Y plots of regression coefficients for the 3M, 5Yr and 30Yr yields as inputs.
+
+```{r}
+# Pairs plot of Coefficients
+pairs(Coefficients)
+```
+
+Interpret the pairs plots
+
+**Answer:** The pairs plot indicate strong negative correlation between the yields of the two long term instruments (5 and 30 year). The relationshup between the 3M bond and the other two is of a different nature: while there are periods when it moves in correlation to the other two rates (slightly negative to 5YR and slightly positive to 30YR coefficients), we can also notice a decoupling effect. 
+
+```{r}
+# Plot of coefficients
+matplot(Coefficients[,-1],xaxt="n",type="l",col=c("black","red","green"))
+axis(side=1,at=1:1657,rownames(Coefficients))
+
+# Identify high slope periods
+high.slopespread.periods<-rownames(Coefficients)[Coefficients[,3]-Coefficients[,4]>3]
+jump.slopes<-rownames(Coefficients)[Coefficients[,3]>3]
+high.slopespread.periods
+jump.slopes
+```
+
+Is the picture of coefficients consistent with the picture of pairs? If yes, explain why.  
+
+**Answer:** The picture of coefficient is consistent with the pairs picture. 
+The coefficients maintain a clear relationship for most of the times, however there are periods when we see the coefficient merging (especially in the post 2008 era). This disruptions are more noticeable in relation to the black line (3M bond) and the other two lines as the pairs plot indicated. 
+
+How often the R-squared is not considered high?
+
+```{r}
+# R-squared
+r.squared<-rollapply(AssignmentDataRegressionComparison,width=Window.width,by=Window.shift,by.column=FALSE,
+         FUN=function(z) summary(lm(Output1~USGG3M+USGG5YR+USGG30YR,data=as.data.frame(z)))$r.squared)
+r.squared<-cbind(rolling.dates[,10],r.squared)
+r.squared[1:10,]
+
+plot(r.squared[,2],xaxt="n",ylim=c(0,1))
+axis(side=1,at=1:1657,rownames(Coefficients))
+
+(low.r.squared.periods<-r.squared[r.squared[,2]<.9,1])
+```
+
+What could cause decrease of $R^2$?  
+
+**Answer:** A drop in $R^2$ indicates that the linear model loses the capacity to describe the observed data. This is due to the fact that due to some unusual event in the market, the time series for the yields are decoupling.  
+In times of severe crises, we might observe an opposite effect altogether. The correlation between the yields might reach values close to 1 and that is due to loss of flexibility in the market. Such effect is noticeable around the year 2008.   
+
+Analyze the rolling p-values.
+
+```{r}
+# p-values
+
+Pvalues<-rollapply(AssignmentDataRegressionComparison,width=Window.width,by=Window.shift,by.column=FALSE, FUN=function(z) summary(lm(Output1~USGG3M+USGG5YR+USGG30YR,data=as.data.frame(z)))$coefficients[,4])
+rownames(Pvalues)<-rolling.dates[,10]
+Pvalues[1:10,]
+matplot(Pvalues,xaxt="n",col=c("black","blue","red","green"),type="o")
+axis(side=1,at=1:1657,rownames(Coefficients))
+# Identify high p-values for USGG3M, USGG5YR, USGG30YR
+rownames(Pvalues)[Pvalues[,2]>.5]
+rownames(Pvalues)[Pvalues[,3]>.5]
+rownames(Pvalues)[Pvalues[,4]>.5]
+```
+
+Interpret the plot
+**Answer:** In this case we are dealing with p-values which serve as indicators of a process rather than just characteristics of a simple linear model.   
+They help identify various periods when one set of predictors is more or less important than the others. We can see that throughout the recorded period, the 3M and especially 5Y bond serve as the most significant predictors of the output variable. However there are moments when this rule is broken. During 1987, we can see that the 5YR bond becomes an insignificant predictor and similarly after the crisis of 2008, this happens to the 3M bond. This might be due to the phenomenon called "flight to safety" which occurs in periods of severe financial crisis, and is characterised by a sharp increase in demand for these type of securities. 
+
+
+# Step 7
+
+Perform PCA with the inputs (columns 1-7).
+
+```{r}
+AssignmentData.Output<-AssignmentData$Output1
+AssignmentData<-data.matrix(AssignmentData[,1:7],rownames.force="automatic")
+dim(AssignmentData)
+head(AssignmentData)
+```
+
+Explore the dimensionality of the set of 3M, 2Y and 5Y yields.
+
+```{r}
+# Select 3 variables. Explore dimensionality and correlation 
+AssignmentData.3M_2Y_5Y<-AssignmentData[,c(1,3,5)]
+pairs(AssignmentData.3M_2Y_5Y)
+```
+
+Observe the 3D plot of the set. Use library rgl:  
+`rgl` seems to have problems with the OSX. Using plotly instead.
+
+```{r}
+#library(plotly)
+#p <- plot_ly(data.frame(AssignmentData.3M_2Y_5Y), x = ~USGG3M, y = ~USGG2YR, z = ~USGG5YR) %>%
+#  add_markers() %>%
+#  layout(scene = list(xaxis = list(title = 'USGG3M'),
+#                     yaxis = list(title = 'USGG2YR'),
+#                     zaxis = list(title = 'USGG5YR')))
+#p
+```
+
+Analyze the covariance matrix of the data. Compare results of manual calculation and `cov()`.
+
+```{r}
+# Calculate manually
+# Note that Y.0 = Y - L.0
+Y.0 <- apply(X = AssignmentData, MARGIN = 2,FUN = function(x) x-mean(x))
+N <- nrow(AssignmentData)
+Manual.Covariance.Matrix <- (t(Y.0)%*%Y.0)/(N-1)
+# Using cov() function
+Covariance.Matrix <- cov(AssignmentData)
+
+# Print results
+Manual.Covariance.Matrix
+Covariance.Matrix
+```
+
+Plot the covariance matrix.
+
+```{r}
+Maturities<-c(.25,.5,2,3,5,10,30)
+contour(Maturities,Maturities,Covariance.Matrix)
+```
+
+Perform the PCA by manually calculating factors, loadings and analyzing the importance of factors.  
+
+Find eigenvalues and eigenvectors. Calculate vector of means (zero loading), first 3 loadings and 3 factors.
+
+```{r}
+# Calculate eigenvalues and eigenvectors
+Eigen.Decomposition <- eigen(Covariance.Matrix)
+
+# Vector of means
+L.0 <- apply(AssignmentData,2,mean)
+
+# First 3 loading vectors
+Loadings <- Eigen.Decomposition$vectors[,1:3]
+
+# First 3 factor scores
+Factors <- Y.0%*%Loadings
+```
+
+See importance of factors
+```{r}
+barplot(Eigen.Decomposition$values/sum(Eigen.Decomposition$values),width=2,col = "black", names.arg=c("F1","F2","F3","F4","F5","F6","F7"))
+```
+
+
+Plot the loadings
+
+```{r}
+matplot(Maturities,Loadings,type="l",lty=1,col=c("black","red","green"),lwd=3)
+```
+
+Interpret the factors by looking at the shapes of the loadings.  
+**Answer:** The interaction of factors and loadings in predicting the response is described by
+\[ \hat Y_0 = \hat F \hat L^T \]
+
+The effect of **increase** in each of the three factors will lead to:
+
+* Factor 1 is associated with loading 1 and will produce a downward shift in all the yields for all maturities  
+* Factor 2 is assocatied with loading 2 and will cause a twist or tilt effect by causing a downward shift on the lower maturity yields and an upwards shift on the longer maturity yields (counterclockwise rotation). 
+* Factor 3 is associated with loading 3 and will cause a butterfly effect by causing a dip in the mid to low range maturitues and an upwards shift on the two extremes. 
+
+
+Calculate and plot 3 selected factors
+
+```{r}
+matplot(Factors,type="l",col=c("black","red","green"),lty=1,lwd=3)
+```
+
+Change the signs of the first factor and the corresponding factor loading.
+
+```{r}
+Loadings[,1]<- -Loadings[,1]
+Factors[,1]<- -Factors[,1]
+matplot(Factors,type="l",col=c("black","red","green"),lty=1,lwd=3)
+matplot(Maturities,Loadings,type="l",lty=1,col=c("black","red","green"),lwd=3)
+```
+
+
+```{r}
+plot(Factors[,1],Factors[,2],type="l",lwd=2)
+```
+
+Draw at least three conclusions from the plot of the first two factors above.  
+
+**Answer:**  
+1. The correlation between factors 1 and 2 has an economic rationale behind it. 
+In the selected period we have a positive correlation between Factor 1 and Factor 2. In a high rate environment such as the one shown below (around data point 2000, or 1988 through 1989 period, marked in orange dots), Factor 1 goes down, and together with it Factor 2 goes up in this period (while remaining negative). This will lead to a general downshift in rates caused by the shape of loading vector 1. However this effect is amplified in long end rates by the shape of loading vector 2.   
+In a high rate environment, the FED pulls the rates down by pulling the short end rates down. The long end rates are controlled by mortgage-lending banks (the market). The interaction between these two forces results in the market over reacting to the FEDs decisions, and that is why we see an amplified effect in the long end rates (i.e long end rates going even further down.)  
+
+```{r}
+# Period under consideration
+rownames(AssignmentData[1900:2000,])[c(1,100)]
+plot(Factors[,1],Factors[,2],type="l",lwd=2)
+points(Factors[1900:2000,1],Factors[1900:2000,2], col="orange")
+matplot(Maturities,Loadings,type="l",lty=1,col=c("black","red","green"),lwd=3)
+matplot(AssignmentData[,-c(8,9,10)],type='l')
+```
+
+2. We can notice in the plot below that the factors are changing significantly from day to day in the first 100 recroded days (marked in red dots). This indicates that this period was marked by high volatility. This corresponds to early 1981.  
+As a comparison we can notice the difference with a selection of 100 days in the firs half of the year 1985. The factors scores in this period are much more crunched together and change less from day to day. This indicates a period of low volatility. An historical event which might describe this pattern is what is know as the Great Moderation, a period of reduction in volatiliy of business cycle fluctuations which started in this exact period. 
+
+```{r}
+# Start and End Dates for Period 1
+rownames(AssignmentData[1:100,])[c(1,100)]
+plot(Factors[,1],Factors[,2],type="l",lwd=2)
+points(Factors[1:100,1],Factors[1:100,2], col="red")
+
+# Start and End Dates for Period 2
+rownames(AssignmentData[1000:1100,])[c(1,100)]
+points(Factors[1000:1100,1],Factors[1000:1100,2], col="blue")
+
+```
+
+3. The highlighted period represents the months leading to and immediately following the Black Monday crash on 1987. We can see that the after crash period was characterizied by very low volatility in rates, its one of the most dense areas in the entire plot. 
+
+```{r}
+plot(Factors[,1],Factors[,2],type="l",lwd=2)
+points(Factors[1650:1750,1],Factors[1650:1750,2], col="green")
+points(Factors[1750:1850,1],Factors[1750:1850,2], col="red")
+rownames(AssignmentData[1650:1850,])[c(1,200)]
+```
+
+
+Analyze the adjustments that each factor makes to the term curve.
+
+```{r}
+OldCurve<-AssignmentData[135,]
+NewCurve<-AssignmentData[136,]
+CurveChange<-NewCurve-OldCurve
+FactorsChange<-Factors[136,]-Factors[135,]
+ModelCurveAdjustment.1Factor<-OldCurve+t(Loadings[,1])*FactorsChange[1]
+ModelCurveAdjustment.2Factors<-OldCurve+t(Loadings[,1])*FactorsChange[1]+t(Loadings[,2])*FactorsChange[2]
+ModelCurveAdjustment.3Factors<-OldCurve+t(Loadings[,1])*FactorsChange[1]+t(Loadings[,2])*FactorsChange[2]+
+  t(Loadings[,3])*FactorsChange[3]
+matplot(Maturities,
+        t(rbind(OldCurve,NewCurve,ModelCurveAdjustment.1Factor,ModelCurveAdjustment.2Factors,
+                ModelCurveAdjustment.3Factors)),
+        type="l",lty=c(1,1,2,2,2),col=c("black","red","green","blue","magenta"),lwd=3,ylab="Curve Adjustment")
+legend(x="topright",c("Old Curve","New Curve","1-Factor Adj.","2-Factor Adj.",
+                      "3-Factor Adj."),lty=c(1,1,2,2,2),lwd=3,col=c("black","red","green","blue","magenta"))
+```
+
+Explain how shapes of the loadings affect the adjustments using only factor 1, factors 1 and 2, and all 3 factors.  
+
+**Answer:** Factor 1 is associated with loading shape 1 which causes just an upwards uniform shift (the green line). Factor 2 is causing the twisting or clockwise rotating effect shown by the blue line. Factor 3 cuases the butterfly effect by affecting the central portion and the extremes in oppposite ways
+
+```{r}
+FactorsChange
+Loadings
+```
+
+See the goodness of fit for the example of 10Y yield.
+
+```{r}
+# How close is the approximation for each maturity?
+
+cbind(Maturities,Loadings)
+
+Model.10Y<-L.0[6]+Loadings[6,1]*Factors[,1]+Loadings[6,2]*Factors[,2]+Loadings[6,3]*Factors[,3]
+matplot(cbind(AssignmentData[,6],Model.10Y),type="l",lty=1,lwd=c(3,1),col=c("black","red"),ylab="5Y Yield")
+```
+
+Repeat the PCA using princomp
+
+```{r}
+# Do PCA analysis using princomp()
+PCA.Yields<-princomp(AssignmentData)
+names(PCA.Yields)
+```
+
+Compare the loadings.
+
+```{r}
+# Check that the loadings are the same
+cbind(PCA.Yields$loadings[,1:3],Maturities,Eigen.Decomposition$vectors[,1:3])
+
+matplot(Maturities,PCA.Yields$loadings[,1:3],type="l",col=c("black","red","green"),lty=1,lwd=3)
+matplot(PCA.Yields$scores[,1:3],type="l",col=c("black","red","green"),lwd=3,lty=1)
+```
+
+
+Change the signs of the first factor and factor loading again.
+
+```{r}
+# Change the signs of the 1st factor and the first loading
+PCA.Yields$loadings[,1]<--PCA.Yields$loadings[,1]
+PCA.Yields$scores[,1]<--PCA.Yields$scores[,1]
+matplot(Maturities,PCA.Yields$loadings[,1:3],type="l",col=c("black","red","green"),lty=1,lwd=3)
+matplot(PCA.Yields$scores[,1:3],type="l",col=c("black","red","green"),lwd=3,lty=1)
+```
+
+Uncover the mystery of the Output in column 8.
+
+```{r}
+# What variable we had as Output?
+matplot(cbind(PCA.Yields$scores[,1],AssignmentData.Output,Factors[,1]),type="l",col=c("black","red","green"),lwd=c(3,2,1),lty=c(1,2,3),ylab="Factor 1")
+```
+
+Compare the regression coefficients from Step 2 and Step 3 with factor loadings.  
+First, look at the slopes for `AssignmentData.Input~AssignmentData.Output`.
+
+```{r}
+t(apply(AssignmentData, 2, function(AssignmentData.col) lm(AssignmentData.col~AssignmentData.Output)$coef))
+
+cbind(PCA.Yields$center,PCA.Yields$loadings[,1])
+```
+
+This shows that the zero loading equals the vector of intercepts of models Y~Output1, where Y is one of the columns of yields in the data. Also, the slopes of the same models are equal to the first loading.  
+
+Check if the same is true in the opposite direction: is there a correspondence between the coefficients of models Output1~Yield and the first loading.
+
+```{r}
+AssignmentData.Centered<-t(apply(AssignmentData,1,function(AssignmentData.row) AssignmentData.row-PCA.Yields$center))
+dim(AssignmentData.Centered)
+t(apply(AssignmentData.Centered, 2, function(AssignmentData.col) lm(AssignmentData.Output~AssignmentData.col)$coef))
+```
+
+To recover the loading of the first factor by doing regression, use all inputs together.
+
+```{r}
+t(lm(AssignmentData.Output~AssignmentData.Centered)$coef)[-1]
+PCA.Yields$loadings[,1]
+```
+
+This means that the factor is a portfolio of all input variables with weights.
+
+```{r}
+PCA.Yields$loadings[,1]
+```

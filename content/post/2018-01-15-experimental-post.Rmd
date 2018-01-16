@@ -1,0 +1,18 @@
+---
+title: Experimental Post
+author: Orest Alickolli
+date: '2018-01-15'
+slug: experimental-post
+categories:
+  - Experimental
+tags:
+  - plot
+---
+
+```{r}
+data(mtcars)
+library(ggplot2)
+head(mtcars)
+qplot(x = mpg, y = wt, data=mtcars)
+```
+

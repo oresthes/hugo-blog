@@ -1,0 +1,448 @@
+---
+title: Sensor Data Analysis
+author: Orest Alickolli
+date: '2017-05-30'
+slug: sensor-data-analysis
+categories:
+  - R
+tags:
+  - GLM
+  - Poisson
+  - Count
+---
+
+
+
+<div id="introduction---test" class="section level2">
+<h2>Introduction - Test</h2>
+<p>The analytics group of a company is asked to investigate causes of malfunctions in an unspecified technological process of one of the manufacturing plants that results in significant increase of cost for the end product.</p>
+<!--more-->
+<p>One of the suspected reasons for malfunctions is the deviation of temperature during the technological process from optimal levels. The provided log file contains times of malfunctions in seconds since the start of measurement and minute records of temperature.</p>
+<p><strong>Libraries used:</strong></p>
+<pre class="r"><code># Beautiful Plots
+suppressMessages(library(ggplot2))
+
+# Split-apply-combine = magic
+suppressMessages(library(plyr))
+
+# Ceci n&#39;est pas un pipe, it&#39;s much better
+suppressMessages(library(magrittr))
+
+# Statistical voodoo
+suppressMessages(require(AER))
+suppressMessages(require(MASS))
+suppressMessages(require(pscl))</code></pre>
+</div>
+<div id="data" class="section level2">
+<h2>Data</h2>
+<p>The log of the data looks as follows:</p>
+<pre><code>##        Time Temperature
+## 1  18.08567    91.59307
+## 2  28.74417    91.59307
+## 3  34.23941    91.59307
+## 4  36.87944    91.59307
+## 5  37.84399    91.59307
+## 6  41.37885    91.59307
+## 7  45.19283    91.59307
+## 8  60.94242    97.30860
+## 9  66.33539    97.30860
+## 10 69.95667    97.30860</code></pre>
+<p>Note again that while malfunctions are recorded as they occur, the temeperature of the system is only updated every minute.</p>
+</div>
+<div id="create-counting-process-explore-cumulative-intensity" class="section level2">
+<h2>Create Counting Process, Explore Cumulative Intensity</h2>
+<p>Counting process is a step function of time that jumps by 1 at every moment of a new malfunction event being logged.</p>
+<pre class="r"><code># Delete This in the end
+Course.Project.Data &lt;- logData</code></pre>
+<pre class="r"><code>Counting.Process &lt;- as.data.frame(
+  cbind(Time = logData$Time, Count=1:length(logData$Time)))
+Counting.Process[1:10,]</code></pre>
+<pre><code>##        Time Count
+## 1  18.08567     1
+## 2  28.74417     2
+## 3  34.23941     3
+## 4  36.87944     4
+## 5  37.84399     5
+## 6  41.37885     6
+## 7  45.19283     7
+## 8  60.94242     8
+## 9  66.33539     9
+## 10 69.95667    10</code></pre>
+<pre class="r"><code>n_rec &lt;- nrow(Counting.Process)</code></pre>
+<p>The counting process trajectory looks fairly smooth and has a steady growth as shown:</p>
+<pre class="r"><code>ggplot(Counting.Process) + 
+  geom_line(mapping = aes(x = Time, y = Count)) +
+  ggtitle(&quot;Malfunctions over time&quot;) + ylab(&quot;Malfunction Count&quot;) + xlab(&quot;Time (sec)&quot;)</code></pre>
+<p><img src="/posts/2017-05-30-sensor-data-analysis_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
+<p>At a first view, the process appears to be occurring at a roughly constant rate (we can imagine a straight line superimposed with the slope representing the rate).<br />
+Thus the number of malfunctions during any period of time is proportional to the length of the period during which they are observed. Also malfunctions appear to occur randomly and independently from each other. These are properties required by a Poisson process. However, before jumping to conclusions, let’s dig down a bit more.</p>
+</div>
+<div id="explore-cumulative-intensity-of-the-process." class="section level2">
+<h2>Explore cumulative intensity of the process.</h2>
+<p>Cumulative intensity is calculated as <span class="math inline">\(\Lambda(t)=\frac{N_t}{t}\)</span>, where <span class="math inline">\(N_t\)</span> is the number of events during the time interval <span class="math inline">\([0,t]\)</span>.</p>
+<pre class="r"><code>ggplot(Counting.Process) +
+  geom_line(aes(x = Time, y = Count/Time)) +
+  geom_hline(aes(yintercept = mean(Count/Time)), colour = &#39;blue&#39;) + 
+  geom_hline(aes(yintercept = Count[n_rec]/Time[n_rec]), colour = &quot;orange&quot;) +
+  ylab(&quot;Cumulative Intensity&quot;) + xlab(&quot;Time&quot;)</code></pre>
+<p><img src="/posts/2017-05-30-sensor-data-analysis_files/figure-html/unnamed-chunk-6-1.png" width="672" /></p>
+<p>The two horizontal lines on the graph are at the mean cumulative intensity (blue) and at the last cumulative intensity levels (orange).</p>
+<p>The cumulative intensity seems to converge to a stable level. The intensities represented by the horizontal lines are at levels:</p>
+<pre class="r"><code>with(Counting.Process, 
+    c(Mean_Intensity = mean(Count/Time),
+      Last_Intensity = Count[n_rec]/Time[n_rec]))</code></pre>
+<pre><code>## Mean_Intensity Last_Intensity 
+##      0.2095305      0.2036008</code></pre>
+</div>
+<div id="check-for-over-dispersion" class="section level2">
+<h2>Check for over-dispersion</h2>
+<p>A count process is rarely described using a Poisson distribution.</p>
+<p>In order to do that calculate one-minute event counts and temperatures. For example, look at the first 20 rows of the data.</p>
+<pre class="r"><code>Course.Project.Data[1:20,]</code></pre>
+<pre><code>##         Time Temperature
+## 1   18.08567    91.59307
+## 2   28.74417    91.59307
+## 3   34.23941    91.59307
+## 4   36.87944    91.59307
+## 5   37.84399    91.59307
+## 6   41.37885    91.59307
+## 7   45.19283    91.59307
+## 8   60.94242    97.30860
+## 9   66.33539    97.30860
+## 10  69.95667    97.30860
+## 11  76.17420    97.30860
+## 12  80.48524    97.30860
+## 13  81.29133    97.30860
+## 14  86.18149    97.30860
+## 15  91.28642    97.30860
+## 16  91.75162    97.30860
+## 17  98.29452    97.30860
+## 18 142.58741    95.98865
+## 19 149.82484    95.98865
+## 20 151.58587    95.98865</code></pre>
+<p>The time column is in seconds.<br />
+Note that the first 7 rows (events) occurred during the first minute.<br />
+The temperature measurement for the first minute was 91.59307 ?F.</p>
+<p>The following 10 rows happen during the second minute and the second minute temperature is 97.3086 ?F.</p>
+<p>The third minute had 7 events at temperature 95.98865 ?F.</p>
+<p>The fourth minute had 4 events at 100.3844 ?F.</p>
+<p>And the following fifth minute had only 1 event at 99.9833 ?F.</p>
+<p>After constructing a data frame of one-minute counts and the corresponding temperatures we should see.</p>
+<pre class="r"><code>One.Minute.Counts.Temps &lt;- 
+  Course.Project.Data %&gt;% cbind(Count=Counting.Process$Count) %&gt;%
+    ddply( ~Temperature, function(minute_frame) {
+      data.frame(Minute.times = unique(floor(minute_frame$Time/60)*60+30),
+               Minute.counts = nrow(minute_frame))
+    })
+
+# Reorder by time recorded
+One.Minute.Counts.Temps &lt;- One.Minute.Counts.Temps[order(One.Minute.Counts.Temps$Minute.times), c(2,3,1)]
+
+rownames(One.Minute.Counts.Temps) &lt;- NULL
+colnames(One.Minute.Counts.Temps) &lt;- c(&#39;Minute.times&#39;,&#39;Minute.counts&#39;,&#39;Minute.Temps&#39; )</code></pre>
+<p>Check for gaps (minutes when no malfunctions were observed).</p>
+<pre class="r"><code>unique(diff(One.Minute.Counts.Temps$Minute.times))</code></pre>
+<pre><code>## [1]  60 120</code></pre>
+<p>We can see that we have certain “gaps”, that is minutes when no malfunctions occur. We have to add these minutes to the data set and set the Count value to 0. Since the temperature was not recorded during these gaps (temperature is recorded only during malfunctions) it will be set to <code>NA</code>.</p>
+<pre class="r"><code>ExtraMinutes&lt;- data.frame(Minute.times = NULL, Minute.counts = NULL, Minute.Temps = NULL);
+
+for (i in 2:nrow(One.Minute.Counts.Temps)) {
+    if((One.Minute.Counts.Temps$Minute.times[i] - 
+        One.Minute.Counts.Temps$Minute.times[i-1]) != 60) {
+      ExtraRow &lt;- data.frame(Minute.times = (One.Minute.Counts.Temps$Minute.times[i] + 
+                                               One.Minute.Counts.Temps$Minute.times[i-1])/2,
+                             Minute.counts = 0,
+                             Minute.Temps =NA)
+      ExtraMinutes &lt;- rbind(ExtraMinutes, ExtraRow)
+    }
+  }</code></pre>
+<p>No we can add the minutes where no malfunctions were observed to the rest of the dataframe.</p>
+<pre class="r"><code>One.Minute.Counts.Temps &lt;- rbind(One.Minute.Counts.Temps, ExtraMinutes)
+One.Minute.Counts.Temps &lt;- One.Minute.Counts.Temps[order(One.Minute.Counts.Temps$Minute.times),]
+head(One.Minute.Counts.Temps)</code></pre>
+<pre><code>##   Minute.times Minute.counts Minute.Temps
+## 1           30             7     91.59307
+## 2           90            10     97.30860
+## 3          150             7     95.98865
+## 4          210             4    100.38440
+## 5          270             1     99.98330
+## 6          330             6    102.54126</code></pre>
+<pre class="r"><code>paste0(&quot;Total number of rows: &quot;, nrow(One.Minute.Counts.Temps))</code></pre>
+<pre><code>## [1] &quot;Total number of rows: 250&quot;</code></pre>
+<p>The column <code>Minute.Times</code> contains mids of minute periods.</p>
+<p>Plot the one minute counts</p>
+<pre class="r"><code>plot(One.Minute.Counts.Temps$Minute.times,One.Minute.Counts.Temps$Minute.counts)</code></pre>
+<p><img src="/posts/2017-05-30-sensor-data-analysis_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
+</div>
+<div id="methods-for-testing-over-dispersion." class="section level2">
+<h2>4.1 Methods for testing over-dispersion.</h2>
+<div id="a-quick-and-rough-method." class="section level3">
+<h3>4.1.1 A quick and rough method.</h3>
+<p>Look at the output of <code>glm()</code> and compare the residual deviance with the number of degrees of freedom. If the assumed model is correct, deviance is asymptotically distributed as Chi-squared (<span class="math inline">\(\chi^2\)</span>) with degrees of freedom <span class="math inline">\(n-k\)</span> where n is the number of observations and k is the number of parameters. For <span class="math inline">\(\chi^2\)</span> distribution the mean is the number of degrees of freedom <span class="math inline">\(n-k\)</span>. If the residual deviance returned by glm() is greater than <span class="math inline">\(n-k\)</span> then it might be a sign of over-dispersion.</p>
+<p>Test the method on simulated Poisson data.</p>
+<pre class="r"><code>Test.Deviance.Overdispersion.Poisson&lt;-function(Sample.Size,Parameter.Lambda){
+  my.Sample&lt;-rpois(Sample.Size,Parameter.Lambda)
+  Model&lt;-glm(my.Sample~1,family=poisson)
+  Dev&lt;-Model$deviance
+  Deg.Fred&lt;-Model$df.residual
+  Dev; Deg.Fred
+  (((Dev/Deg.Fred-1)/sqrt(2/Deg.Fred)&gt;-1.96)&amp;((Dev/Deg.Fred-1)/sqrt(2/Deg.Fred)&lt;=1.96))*1
+} 
+Test.Deviance.Overdispersion.Poisson(100,1)</code></pre>
+<pre><code>## [1] 1</code></pre>
+<p>The function simulates a sample from Poisson distribution, estimates parameter <span class="math inline">\(\lambda\)</span> which is simultaneously the mean value and the variance, then it checks if <span class="math inline">\(\frac{Deviance}{Deg.Freedom} - 1\)</span> belongs to the interval <span class="math inline">\((-1.96,1.96]\)</span>. If yes, the result is 1. Otherwise it is 0.</p>
+<p>Now repeat the call of the function 300 times to see how many times it returns one and how many times zero.</p>
+<pre class="r"><code>sum(replicate(300,Test.Deviance.Overdispersion.Poisson(100,1)))</code></pre>
+<pre><code>## [1] 263</code></pre>
+<p>The estimate of the parameter <span class="math inline">\(\lambda\)</span> given by <code>glm()</code> is <span class="math inline">\(e^{Coefficient}\)</span> :</p>
+<pre class="r"><code>exp(glm(rpois(1000,2)~1,family=poisson)$coeff)</code></pre>
+<pre><code>## (Intercept) 
+##       1.989</code></pre>
+<p>Perform the same test on negative binomial data</p>
+<pre class="r"><code>Test.Deviance.Overdispersion.NBinom&lt;-function(Sample.Size,Parameter.prob){
+  my.Sample&lt;-rnbinom(Sample.Size,2,Parameter.prob)
+  Model&lt;-glm(my.Sample~1,family=poisson)
+  Dev&lt;-Model$deviance
+  Deg.Fred&lt;-Model$df.residual
+  (((Dev/Deg.Fred-1)/sqrt(2/Deg.Fred)&gt;-1.96)&amp;((Dev/Deg.Fred-1)/sqrt(2/Deg.Fred)&lt;=1.96))*1
+} 
+sum(replicate(300,Test.Deviance.Overdispersion.NBinom(100,.2)))</code></pre>
+<pre><code>## [1] 0</code></pre>
+<p>We see that the over-dispersed negative binomial distribution sample never passes the test. Now apply the test to the one-minute event counts.</p>
+<pre class="r"><code>GLM.model&lt;-glm(One.Minute.Counts.Temps$Minute.counts~1,family=poisson)
+GLM.model</code></pre>
+<pre><code>## 
+## Call:  glm(formula = One.Minute.Counts.Temps$Minute.counts ~ 1, family = poisson)
+## 
+## Coefficients:
+## (Intercept)  
+##       2.503  
+## 
+## Degrees of Freedom: 249 Total (i.e. Null);  249 Residual
+## Null Deviance:       1799 
+## Residual Deviance: 1799  AIC: 2789</code></pre>
+<pre class="r"><code>Dev&lt;-GLM.model$deviance
+Deg.Fred&lt;-GLM.model$df.residual
+(((Dev/Deg.Fred-1)/sqrt(2/Deg.Fred)&gt;-1.96)&amp;((Dev/Deg.Fred-1)/sqrt(2/Deg.Fred)&lt;=1.96))*1</code></pre>
+<pre><code>## [1] 0</code></pre>
+<pre class="r"><code>Dev; Deg.Fred;</code></pre>
+<pre><code>## [1] 1799.006</code></pre>
+<pre><code>## [1] 249</code></pre>
+<p><strong>Do you see signs of over-dispersion?</strong></p>
+<p><em>Answer:</em> The model fails the test and we can see that the residual deviance is is higher than the number of degrees of freedom, so we can say that there are signs of over-dispersion.</p>
+</div>
+<div id="regression-test-by-cameron-trivedi" class="section level3">
+<h3>4.1.2 Regression Test by Cameron-Trivedi</h3>
+<p>The test implemented in AER is described in Cameron, A.C. and Trivedi, P.K. (1990). Regression-based Tests for Over-dispersion in the Poisson Model. Journal of Econometrics, 46, 347–364.</p>
+<p>In a Poisson model, the mean is <span class="math inline">\(E(Y)=\lambda\)</span> and the variance is <span class="math inline">\(V(Y)=\lambda\)</span> as well. They are equal. The test has a null hypothesis <span class="math inline">\(c=0\)</span> where <span class="math inline">\(Var(Y)=\lambda+c∗f(\lambda)\)</span>, <span class="math inline">\(c&lt;0\)</span> means under-dispersion and <span class="math inline">\(c&gt;0\)</span> means over-dispersion. The function <span class="math inline">\(f(.)\)</span> is some monotonic function (linear (default) or quadratic). The test statistic used is a <span class="math inline">\(t-statistic\)</span> which is asymptotically standard normal under the null.</p>
+<p>Use <code>dispersiontest()</code> from AER and apply it to <code>GLM.model</code> that we fit earlier.</p>
+<pre class="r"><code>library(&quot;AER&quot;)
+Disp.Test &lt;- dispersiontest(object = GLM.model, alternative = &#39;two.sided&#39;)
+Disp.Test</code></pre>
+<pre><code>## 
+##  Dispersion test
+## 
+## data:  GLM.model
+## z = 8.5747, p-value &lt; 2.2e-16
+## alternative hypothesis: true dispersion is not equal to 1
+## sample estimates:
+## dispersion 
+##   7.377975</code></pre>
+<p><strong>Does the test show overdispersion?</strong></p>
+<p><em>Answer:</em> Yes, the p-value is extremely small, thus we accept the alternative hypothesis of dispresion being not equal to 1. Since the estimated dispersion is around 7 we can state that there are signs of over dispersion.</p>
+</div>
+<div id="test-against-negative-binomial-distribution" class="section level3">
+<h3>4.1.3 Test against Negative Binomial Distribution</h3>
+<p>The null hypothesis of this test is that the distribution is Poisson as particular case of Negative binomial, against Negative Binomial.</p>
+<p>The references are: A. Colin Cameron and Pravin K. Trivedi (1998) Regression analysis of count data. New York: Cambridge University Press.</p>
+<p>Lawless, J. F. (1987) Negative Binomial and Mixed Poisson Regressions. The Canadian Journal of Statistics. 15:209-225.</p>
+<p>Required packages are <code>MASS</code> (to create a negative binomial object with <code>glm.nb</code>) and <code>pscl</code> the test function is <code>odTest</code>.</p>
+<pre class="r"><code>suppressMessages(suppressWarnings(library(MASS)))
+suppressMessages(suppressWarnings(library(pscl)))</code></pre>
+<p>Apply <code>glm.nb()</code> from <code>MASS</code> to one-minute counts to fit a negative binomial model. Then learn how to use <code>odTest()</code> from pscl to test if the data can be described by Poisson distribution (no over-dispersion) or not (over-dispersion).</p>
+<pre class="r"><code>GLM.model.nb &lt;- glm.nb(One.Minute.Counts.Temps$Minute.counts ~ 1)
+summary(GLM.model.nb)</code></pre>
+<pre><code>## 
+## Call:
+## glm.nb(formula = One.Minute.Counts.Temps$Minute.counts ~ 1, init.theta = 1.747516571, 
+##     link = log)
+## 
+## Deviance Residuals: 
+##     Min       1Q   Median       3Q      Max  
+## -2.6951  -0.9389  -0.2977   0.4958   2.0931  
+## 
+## Coefficients:
+##             Estimate Std. Error z value Pr(&gt;|z|)    
+## (Intercept)  2.50275    0.05115   48.93   &lt;2e-16 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## (Dispersion parameter for Negative Binomial(1.7475) family taken to be 1)
+## 
+##     Null deviance: 278.5  on 249  degrees of freedom
+## Residual deviance: 278.5  on 249  degrees of freedom
+## AIC: 1746.7
+## 
+## Number of Fisher Scoring iterations: 1
+## 
+## 
+##               Theta:  1.748 
+##           Std. Err.:  0.179 
+## 
+##  2 x log-likelihood:  -1742.697</code></pre>
+<pre class="r"><code>odTest(GLM.model.nb)</code></pre>
+<pre><code>## Likelihood ratio test of H0: Poisson, as restricted NB model:
+## n.b., the distribution of the test-statistic under H0 is non-standard
+## e.g., see help(odTest) for details/references
+## 
+## Critical value of test statistic at the alpha= 0.05 level: 2.7055 
+## Chi-Square Test Statistic =  1044.585 p-value = &lt; 2.2e-16</code></pre>
+<p><strong>Does the test show overdispersion?</strong></p>
+<p><em>Answer:</em></p>
+</div>
+</div>
+<div id="find-the-distribution-of-poisson-intensity." class="section level1">
+<h1>5. Find the distribution of Poisson intensity.</h1>
+<div id="kolmogorov-smirnoff-test" class="section level2">
+<h2>5.1 Kolmogorov-Smirnoff Test</h2>
+<p>Kolmogorov-Smirnov test is used to test hypotheses of equivalence between two empirical distributions or equivalence between one empirical distribution and one theoretical distribution.</p>
+<pre class="r"><code>suppressMessages(suppressWarnings(library(lattice)))
+suppressMessages(suppressWarnings(library(latticeExtra)))</code></pre>
+<pre class="r"><code>sample1=rnorm(100)
+sample2=rnorm(100,1,2)
+Cum.Distr.Functions &lt;- data.frame(sample1,sample2)
+ecdfplot(~ sample1 + sample2, data=Cum.Distr.Functions, auto.key=list(space=&#39;right&#39;))</code></pre>
+<p><img src="/posts/2017-05-30-sensor-data-analysis_files/figure-html/unnamed-chunk-25-1.png" width="672" /></p>
+<p>Check equivalence of empirical distributions for the two samples.</p>
+<pre class="r"><code>ks.test(sample1,sample2)</code></pre>
+<pre><code>## 
+##  Two-sample Kolmogorov-Smirnov test
+## 
+## data:  sample1 and sample2
+## D = 0.27, p-value = 0.001365
+## alternative hypothesis: two-sided</code></pre>
+<p><strong>What does this output tell you about equivalence of the two distributions?</strong></p>
+<p><em>Answer:</em> It suggests that the two samples are not sampled from the same distribution, i.e. negating the null hypothesis of the Kolmogorov-Smirnov Test.</p>
+<p>Check equivalence of empirical distribution of <code>sample1</code> and theoretical distribution <code>Norm(0,1)</code>.</p>
+<pre class="r"><code>ks.test(sample1,&quot;pnorm&quot;,mean=0,sd=1)</code></pre>
+<pre><code>## 
+##  One-sample Kolmogorov-Smirnov test
+## 
+## data:  sample1
+## D = 0.083178, p-value = 0.4934
+## alternative hypothesis: two-sided</code></pre>
+<p><strong>What does this output tell you?</strong></p>
+<p><em>Answer:</em> The null hypothesis that the two samples are drawn from the same distribution cannot be rejected at this level of p-value.</p>
+<p>Check equivalence of the empirical distribution of <code>sample2</code> and theoretical distribution <code>Norm(0,1)</code>.</p>
+<pre class="r"><code>ks.test(sample2,&quot;pnorm&quot;,mean=0,sd=1)</code></pre>
+<pre><code>## 
+##  One-sample Kolmogorov-Smirnov test
+## 
+## data:  sample2
+## D = 0.28805, p-value = 1.242e-07
+## alternative hypothesis: two-sided</code></pre>
+</div>
+<div id="check-the-distribution-for-the-entire-period." class="section level2">
+<h2>5.2. Check the distribution for the entire period.</h2>
+<p>Apply Kolmogorov-Smirnov test to <code>Counting.Process$Time</code> and theoretical exponential distribution with parameter equal to average intensity.</p>
+<p>Hint: the empirical distribution should be estimated for time intervals between malfunctions.</p>
+<pre class="r"><code>Time.Intervals &lt;- diff(Counting.Process$Time)
+Mean.Intensity&lt;- mean(Counting.Process$Count/Counting.Process$Time)
+(KS.Test.Event.Intervals &lt;- ks.test(Time.Intervals, &quot;pexp&quot;, Mean.Intensity))</code></pre>
+<pre><code>## 
+##  One-sample Kolmogorov-Smirnov test
+## 
+## data:  Time.Intervals
+## D = 0.095061, p-value &lt; 2.2e-16
+## alternative hypothesis: two-sided</code></pre>
+<p>Here is how the result should look like</p>
+<pre class="r"><code>c(KS.Test.Event.Intervals$statistic,p.value=KS.Test.Event.Intervals$p.value)</code></pre>
+<pre><code>##         D   p.value 
+## 0.0950615 0.0000000</code></pre>
+<p>Plot empirical cumulative distribution function for time intervals between malfunctions.</p>
+<pre class="r"><code>plot(ecdf(diff(Counting.Process$Time)), xlab = &quot;Time Interval&quot;, ylab = &quot;CDF&quot;, main = &quot;ECDF&quot;)</code></pre>
+<p><img src="/posts/2017-05-30-sensor-data-analysis_files/figure-html/unnamed-chunk-31-1.png" width="672" /></p>
+</div>
+<div id="check-distribution-of-one-minute-periods" class="section level2">
+<h2>5.3. Check distribution of one-minute periods</h2>
+<p>Use at least 5 different candidates for distribution of Poisson intensity of malfunctions.</p>
+<p>Find one-minute intensities <code>Event.Intensities</code>. Hint. One-minute intensity by definition is the number of events per unit of time (second).</p>
+<pre class="r"><code>Event.Intensities &lt;- One.Minute.Counts.Temps$Minute.counts/60
+hist(Event.Intensities)</code></pre>
+<p><img src="/posts/2017-05-30-sensor-data-analysis_files/figure-html/unnamed-chunk-32-1.png" width="672" /></p>
+<p><strong>What distribution does this histogram remind you of?</strong></p>
+<p>This histogram suggest a gamma or exponential distribution which are the natural guesses for the distribution of time intervals between events.</p>
+<p>Suggest 5 candidates for the distribution. Fit each of your 5 candidate distributions to Event.Intensities using <code>fitdistr()</code> from <code>MASS</code>.</p>
+<p>Recommendation: start with fitting normal and exponential distributions first.</p>
+<pre class="r"><code>Fitting.Normal &lt;- fitdistr(Event.Intensities, densfun = &quot;normal&quot;)
+Fitting.Normal</code></pre>
+<pre><code>##       mean           sd     
+##   0.203600000   0.158227459 
+##  (0.010007183) (0.007076147)</code></pre>
+<pre class="r"><code>Fitting.Exponential &lt;- fitdistr(Event.Intensities, densfun = &quot;exponential&quot;)
+Fitting.Exponential</code></pre>
+<pre><code>##      rate   
+##   4.9115914 
+##  (0.3106363)</code></pre>
+<p>Test the fitted distributions with Kolmogorov-Smirnov test.</p>
+<pre class="r"><code>KS.Normal &lt;- ks.test(Event.Intensities, &quot;pnorm&quot;, Fitting.Normal$estimate[1], Fitting.Normal$estimate[2])</code></pre>
+<pre><code>## Warning in ks.test(Event.Intensities, &quot;pnorm&quot;, Fitting.Normal
+## $estimate[1], : ties should not be present for the Kolmogorov-Smirnov test</code></pre>
+<pre class="r"><code>c(KS.Normal$statistic,P.Value=KS.Normal$p.value)</code></pre>
+<pre><code>##            D      P.Value 
+## 0.1326020316 0.0003039941</code></pre>
+<pre class="r"><code>KS.Exp &lt;- ks.test(Event.Intensities, &quot;pexp&quot;, Fitting.Exponential$estimate)</code></pre>
+<pre><code>## Warning in ks.test(Event.Intensities, &quot;pexp&quot;, Fitting.Exponential
+## $estimate): ties should not be present for the Kolmogorov-Smirnov test</code></pre>
+<pre class="r"><code>c(KS.Exp$statistic,P.Value=KS.Exp$p.value)</code></pre>
+<pre><code>##           D     P.Value 
+## 0.115233049 0.002615812</code></pre>
+<p><strong>What do you conclude from these tests?</strong></p>
+<p>Try to fit gamma distribution directly using <code>fitdistr()</code></p>
+<p>What results do you obtain when you fit gamma distribution using <code>fitdistr()</code>? An error is caused when <code>fitdistr()</code> is used to fit a gamma distribution. This is due to 0s being present in the sample.</p>
+<p>Estimate parameters of gamma distribution using method of moments.</p>
+<p>We know that the following applies for Gamma Distributions:</p>
+<p><span class="math display">\[
+E[X] = \alpha\cdot\beta \\
+V[X] = \alpha\cdot\beta^2
+\]</span> where <span class="math inline">\(\alpha\)</span> is the shape parameter and <span class="math inline">\(\beta\)</span> is the scale parameter (1/rate). Define rate, <span class="math inline">\(\lamba\)</span> to be equal to <span class="math inline">\(1/\beta\)</span>. We can then write: <span class="math display">\[
+\alpha = \lambda\cdot E[X]
+\]</span> Replacing in second equation we obtain</p>
+<p><span class="math display">\[
+V[X] = \frac {\lambda \cdot E[X]}{\lambda^2} = \frac{E[X]}{\lambda}
+\]</span></p>
+<p>Thus we can evaluate rate (<span class="math inline">\(\lambda\)</span>) and shape (<span class="math inline">\(\alpha\)</span>) as: <span class="math display">\[
+\lambda = \frac{E[X]}{V[X]} \qquad \alpha=\frac{E[X]^2}{V[X]}
+\]</span></p>
+<pre class="r"><code>Event.Intensities.Mean &lt;- mean(Event.Intensities)
+Event.Intensities.Variance &lt;- var(Event.Intensities)*(length(Event.Intensities)-1)/length(Event.Intensities)</code></pre>
+<pre class="r"><code>(Moments.Rate &lt;- Event.Intensities.Mean/Event.Intensities.Variance)</code></pre>
+<pre><code>## [1] 8.132313</code></pre>
+<pre class="r"><code>(Moments.Shape &lt;- Event.Intensities.Mean^2/Event.Intensities.Variance)</code></pre>
+<pre><code>## [1] 1.655739</code></pre>
+<p>Check gamma distribution with these parameters as a theoretical distribution using Kolmogorov-Smirnov test.</p>
+<pre class="r"><code>KS.Test.Moments &lt;- ks.test(Event.Intensities, &quot;pgamma&quot;, Moments.Shape, Moments.Rate)</code></pre>
+<pre><code>## Warning in ks.test(Event.Intensities, &quot;pgamma&quot;, Moments.Shape,
+## Moments.Rate): ties should not be present for the Kolmogorov-Smirnov test</code></pre>
+<pre class="r"><code>KS.Test.Moments</code></pre>
+<pre><code>## 
+##  One-sample Kolmogorov-Smirnov test
+## 
+## data:  Event.Intensities
+## D = 0.05781, p-value = 0.3736
+## alternative hypothesis: two-sided</code></pre>
+<p>Find at least 2 more candidates and test them by Kolmogorov-Smirnov.</p>
+<p>Collect all estimated distributions together and make your choice.</p>
+<pre class="r"><code>#rbind(KS.Moments=c(KS.Test.Moments$statistic,P.Value=KS.Test.Moments$p.value),
+#      KS.Candidate.4=c(KS.Candidate.4$statistic,P.Value=KS.Candidate.4$p.value),
+#      KS.Candidate.5=c(KS.Candidate.5$statistic,P.Value=KS.Candidate.5$p.value),
+#      KS.Exp=c(KS.Exp$statistic,P.Value=KS.Exp$p.value),
+#      KS.Normal=c(KS.Normal$statistic,KS.Normal$p.value))</code></pre>
+<p><strong>What distribution for the one-minute intensity of malfunctions do you choose?</strong></p>
+<p><strong>What distribution of one-minute malfunctions counts follow from your choice?</strong></p>
+<p>Write <code>One.Minute.Counts.Temps</code> to file <code>OneMinuteCountsTemps.csv</code> to continue working on Part 2.</p>
+<pre class="r"><code>#write.csv(One.Minute.Counts.Temps,file= paste(dataPath, &quot;OneMinuteCountsTemps.csv&quot;, sep = &quot;/&quot;),row.names=FALSE)</code></pre>
+<p><em>Disclaimer:</em></p>
+<p>This analysis is a portion of the final class project of the Linear and Non-linear method course at The University of Chicago. Credit goes to Dr. Yuri Balasanov for providing the data and guidance.</p>
+</div>
+</div>
