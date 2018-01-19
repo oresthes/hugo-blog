@@ -1,13 +1,13 @@
 ---
 title: Principal Component Analysis of Financial Data
 author: Orest Alickolli
-date: '2018-01-15'
-slug: principal-component-analysis-of-financial-data
+date: '2017-04-15'
 categories:
   - R
 tags:
   - PCA
   - TimeSeries
+slug: principal-component-analysis-of-financial-data
 ---
 
 Data from the part 30 years regarding yields of US Treasury bonds of different maturities have been collected. In this project, we deliberately explore the data to study correlation effects in linear predictors and the use of PCA to reduce dimensionality. We will be able to create through PCA a two-dimensional tableau and explore historical events in it. 

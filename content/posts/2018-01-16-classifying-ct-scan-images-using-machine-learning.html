@@ -1,0 +1,282 @@
+---
+title: Classifying CT-Scan images using machine learning
+author: Orest Alickolli
+date: '2017-10-16'
+slug: classifying-ct-scan-images-using-machine-learning
+description: "The aim of the project is to identify the location of a CT slice along the vertical axis of the human body."
+categories:
+  - R
+tags:
+  - Machine Learning
+  - Decision Trees
+  - Linear Regression
+---
+
+
+
+<p>This project is associated with Kaggle competition <a href="https://www.kaggle.com/uciml/ct-slice-localization" class="uri">https://www.kaggle.com/uciml/ct-slice-localization</a> and was a part of the final project of the Machine Learning class at The University of Chicago.</p>
+<p>The aim of the project is to identify the location of a CT slice along the vertical axis of the human body.</p>
+<p>The data contain 384 features extracted from 53,500 CT images from 74 patients. Each record characterizes a slice of an image. Each CT slice is described by two histograms in polar space. The first histogram describes the location of bone structures in the image, the second the location of air inclusions inside of the body. Both histograms are concatenated to form the final feature vector of length 384. The class output variable is numeric and denotes the relative location of the CT slice on the axial axis of the human body.</p>
+<p>The column information:</p>
+<p>1: PatientId: Each ID identifies a different patient 2 - 241: Histogram describing bone structures 242 - 385: Histogram describing air inclusions</p>
+<p>386: Reference: Relative location of the image on the axial axis (class value). Values are in the range [0; 180] where 0 denotes the top of the head and 180 the soles of the feet.</p>
+<p>It is important to predict location of the slice using the features because when 2 or more scans are compared or in general it is necessary to navigate to a certain part of the body, the whole scan (about 1 Gb) needs to be loaded over clinical network and then the required slice is usually identified manually.</p>
+<div id="data" class="section level2">
+<h2>Data</h2>
+<p>Read the data and do exploratory analysis.</p>
+<pre class="r"><code>datapath &lt;- &quot;~/Desktop/Machine Learning/Course Project&quot;
+dat &lt;- read.csv(file=paste(datapath,&quot;slice_localization_data.csv&quot;,sep=&quot;/&quot;))
+c(head(colnames(dat)),tail(colnames(dat)))</code></pre>
+<pre><code>##  [1] &quot;patientId&quot; &quot;value0&quot;    &quot;value1&quot;    &quot;value2&quot;    &quot;value3&quot;   
+##  [6] &quot;value4&quot;    &quot;value379&quot;  &quot;value380&quot;  &quot;value381&quot;  &quot;value382&quot; 
+## [11] &quot;value383&quot;  &quot;reference&quot;</code></pre>
+<pre class="r"><code>pred &lt;- dat[,c(-1,-386)]
+Y &lt;- dat[,386]
+c(head(colnames(pred)),tail(colnames(pred)))</code></pre>
+<pre><code>##  [1] &quot;value0&quot;   &quot;value1&quot;   &quot;value2&quot;   &quot;value3&quot;   &quot;value4&quot;   &quot;value5&quot;  
+##  [7] &quot;value378&quot; &quot;value379&quot; &quot;value380&quot; &quot;value381&quot; &quot;value382&quot; &quot;value383&quot;</code></pre>
+<pre class="r"><code>plot(Y)</code></pre>
+<p><img src="/posts/2018-01-16-classifying-ct-scan-images-using-machine-learning_files/figure-html/unnamed-chunk-3-1.png" width="672" /></p>
+<pre class="r"><code>summary(Y)</code></pre>
+<pre><code>##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+##   1.739  29.892  43.988  47.028  63.735  97.489</code></pre>
+<pre class="r"><code>hist(Y)</code></pre>
+<p><img src="/posts/2018-01-16-classifying-ct-scan-images-using-machine-learning_files/figure-html/unnamed-chunk-3-2.png" width="672" /></p>
+<p>Check for normality</p>
+<pre class="r"><code>qqnorm(Y)
+qqline(Y)</code></pre>
+<p><img src="/posts/2018-01-16-classifying-ct-scan-images-using-machine-learning_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<p>Any formal test of normality will, of course, fail.</p>
+<p>Load libraries</p>
+<pre class="r"><code>require(magrittr)</code></pre>
+<pre><code>## Loading required package: magrittr</code></pre>
+<pre class="r"><code>require(plyr)</code></pre>
+<pre><code>## Loading required package: plyr</code></pre>
+<pre class="r"><code>require(dplyr)</code></pre>
+<pre><code>## Loading required package: dplyr</code></pre>
+<pre><code>## 
+## Attaching package: &#39;dplyr&#39;</code></pre>
+<pre><code>## The following objects are masked from &#39;package:plyr&#39;:
+## 
+##     arrange, count, desc, failwith, id, mutate, rename, summarise,
+##     summarize</code></pre>
+<pre><code>## The following objects are masked from &#39;package:stats&#39;:
+## 
+##     filter, lag</code></pre>
+<pre><code>## The following objects are masked from &#39;package:base&#39;:
+## 
+##     intersect, setdiff, setequal, union</code></pre>
+<pre class="r"><code>require(ggplot2)</code></pre>
+<pre><code>## Loading required package: ggplot2</code></pre>
+<pre class="r"><code>require(glmnet)</code></pre>
+<pre><code>## Loading required package: glmnet</code></pre>
+<pre><code>## Loading required package: Matrix</code></pre>
+<pre><code>## Loading required package: foreach</code></pre>
+<pre><code>## Loaded glmnet 2.0-13</code></pre>
+<pre class="r"><code>require(rpart)</code></pre>
+<pre><code>## Loading required package: rpart</code></pre>
+<pre class="r"><code>require(rpart.plot)</code></pre>
+<pre><code>## Loading required package: rpart.plot</code></pre>
+</div>
+<div id="linear-model" class="section level2">
+<h2>1.2. Linear model</h2>
+<p>Fit linear model with all predictors.</p>
+<pre class="r"><code>lmod &lt;- lm(formula = reference~., data = dat[,-1])
+summary(lmod)%&gt;%attributes()</code></pre>
+<pre><code>## $names
+##  [1] &quot;call&quot;          &quot;terms&quot;         &quot;residuals&quot;     &quot;coefficients&quot; 
+##  [5] &quot;aliased&quot;       &quot;sigma&quot;         &quot;df&quot;            &quot;r.squared&quot;    
+##  [9] &quot;adj.r.squared&quot; &quot;fstatistic&quot;    &quot;cov.unscaled&quot; 
+## 
+## $class
+## [1] &quot;summary.lm&quot;</code></pre>
+<pre class="r"><code># Extract R-squared for full lineaar model
+summary(lmod)$r.squared</code></pre>
+<pre><code>## [1] 0.8644337</code></pre>
+<p>Remove predictors insignificant with 5% level and predictors returning NA as coefficients.</p>
+<pre class="r"><code># Extract Table of Coefficients
+lmod_coef &lt;- lmod%&gt;%summary%&gt;%coefficients
+anyNA(lmod_coef[,1])</code></pre>
+<pre><code>## [1] FALSE</code></pre>
+<p>No NA’s are present in the list of coefficients.</p>
+<p>Remove insignificant predictors</p>
+<pre class="r"><code>lmod_sigcoef &lt;- lmod_coef[lmod_coef[,4]&lt;0.05,]
+subset_coef &lt;- rownames(lmod_sigcoef)[-1] #Remove Intercept</code></pre>
+<p>Fit reduced linear model.</p>
+<pre class="r"><code>Red.Frame &lt;- data.frame(reference = dat$reference, dat%&gt;%select_(.dots = subset_coef))
+lmod_reduced &lt;- lm(formula = reference~., data = Red.Frame)</code></pre>
+<p>Create vector of characteristics of the fit: AIC, <span class="math inline">\(R^2\)</span>, MSE, number of predictors in the model.</p>
+<pre class="r"><code>lmod_characteristics &lt;- data.frame(AIC = AIC(lmod_reduced), 
+                                   R2 = summary(lmod_reduced)$r.squared,
+                                   MSE = mean(lmod_reduced$residuals^2),
+                                   Predictors = nrow(lmod_sigcoef), row.names = c(&quot;Linear Model&quot;))
+lmod_characteristics</code></pre>
+<pre><code>##                   AIC        R2      MSE Predictors
+## Linear Model 378103.3 0.8638282 68.00158        265</code></pre>
+<p>The reduction in R-squared is very minimal; the removed columns contain very little predictive power.</p>
+</div>
+<div id="pca-method" class="section level2">
+<h2>1.3. PCA Method</h2>
+<p>Apply PCA regression method as explained in the lecture. Create vector of fit characteristics.</p>
+<p>PCA is an effective method in the presence of high correlation. The method allows us to identify features which are orthogonal to each other and capture most of the variance in the data.</p>
+<p>The process consists in (adapated from <em>Faraway, 2014</em>):</p>
+<ul>
+<li>Finding <span class="math inline">\(u_1\)</span> such that <span class="math inline">\(V(u_1^T X)\)</span> is maximized subject to <span class="math inline">\(u_1^Tu_1=1\)</span>.</li>
+<li>Finding <span class="math inline">\(u_2\)</span> such that <span class="math inline">\(V(u_2^T X)\)</span> is maximized subject to <span class="math inline">\(u_2^Tu_1=0\)</span> and <span class="math inline">\(u_2^Tu_2=1\)</span>.</li>
+<li>Continue finding directions of greatest variations which are orthogonal to all previously identified directions until remaining variation is deemed negligible.</li>
+</ul>
+<p>We can then write: <span class="math inline">\(z_i=u_i^TX\)</span>. The <span class="math inline">\(z_i\)</span> are known as principal components. In matrix form <span class="math inline">\(Z=XU\)</span>, (U can be thought of as a rotation matrix).</p>
+<p>It was shown in Part 1 that a large number of predictors contain very little predictive power. Thus it would not be reasonable to include them in the final PCR which is simply a linear combination of the original predictors.</p>
+<pre class="r"><code>data.PC &lt;- prcomp(Red.Frame[,-1])
+Rotation &lt;- as.data.frame(data.PC$rotation)
+Scores &lt;- as.data.frame(data.PC$x)</code></pre>
+<p>We can identify based on decomposition above that <code>rotation</code> corresponds to matrix U and <code>x</code> to Z. Summary of decomposition helps see its effectiveness:</p>
+<p>The proportion of cumulative varaince explained for every 10 components is:</p>
+<pre class="r"><code>cumulative_variance &lt;- summary(data.PC)$importance[3,]
+ten_sequence &lt;- seq(0, length(cumulative_variance), 10)
+cumulative_variance[ten_sequence]</code></pre>
+<pre><code>##    PC10    PC20    PC30    PC40    PC50    PC60    PC70    PC80    PC90 
+## 0.57773 0.67312 0.72813 0.76901 0.80093 0.82757 0.85054 0.87056 0.88796 
+##   PC100   PC110   PC120   PC130   PC140   PC150   PC160   PC170   PC180 
+## 0.90347 0.91727 0.92962 0.94063 0.95041 0.95908 0.96669 0.97346 0.97940 
+##   PC190   PC200   PC210   PC220   PC230   PC240   PC250   PC260 
+## 0.98461 0.98908 0.99270 0.99556 0.99761 0.99889 0.99966 0.99997</code></pre>
+<p>We can see that ~95% cumulative variance in the predictors is contained in half the transformed set of predictors.</p>
+<p><strong>Principal components regression (PCR)</strong>. Having obtained the new set of orthogonal features we perform a linear rigression with roughly half the number of predictors.</p>
+<pre class="r"><code>PCR.Frame &lt;- cbind(reference = dat$reference, Scores)
+lmodPCR &lt;- lm(formula = reference ~ ., data = PCR.Frame[,1:131])</code></pre>
+<pre class="r"><code>lmodPCR_characteristics &lt;- data.frame(AIC = AIC(lmodPCR), 
+                                   R2 = summary(lmodPCR)$r.squared,
+                                   MSE = mean(lmodPCR$residuals^2),
+                                   Predictors = 130, row.names = &quot;PCR&quot;)
+rbind(lmodPCR_characteristics, lmod_characteristics)</code></pre>
+<pre><code>##                   AIC        R2      MSE Predictors
+## PCR          387000.8 0.8383823 80.70880        130
+## Linear Model 378103.3 0.8638282 68.00158        265</code></pre>
+<p>Note: There is no way of achieving a higher <span class="math inline">\(R^2\)</span> using PCR, however it is a useful method for simplifying the model.</p>
+<pre class="r"><code>Compare_Chart &lt;- adply(ten_sequence,1,function(terminal_val){
+  # Fit Linear Model
+  lm_R2 &lt;- summary(lm(reference~., data = Red.Frame[1:(terminal_val+1)]))$r.squared
+  # Fit PCR
+  PCR_R2 &lt;- summary(lm(reference~., data = PCR.Frame[1:(terminal_val+1)]))$r.squared
+  return(data.frame(Reduced_LM=lm_R2, PCR=PCR_R2))
+})</code></pre>
+<pre class="r"><code>plot(ten_sequence, Compare_Chart$Reduced_LM, type = &quot;l&quot;, xlab=&quot;Nr. of Predictors&quot;, ylab=&quot;R-Squared&quot;)
+lines(ten_sequence, Compare_Chart$PCR, col=&quot;red&quot;)</code></pre>
+<p><img src="/posts/2018-01-16-classifying-ct-scan-images-using-machine-learning_files/figure-html/unnamed-chunk-16-1.png" width="672" /></p>
+<p>We can see that PCR (red) reaches high R-squared values much sooner than the simple linear model (black). (However, it needs to be mentioned that the linear model’s performance in this graph can be improved by ordering the predictors based on their importance using the <code>realimpo</code> package).</p>
+</div>
+<div id="lasso-method" class="section level2">
+<h2>1.4. Lasso Method</h2>
+<p>Apply lasso regression as explained in the lecture. Create vector of fit characteristics.</p>
+<p>Lasso is part of the family of shrinkage methods and is closely associated to Ridge Regression. The method consists in fitting the full model and then subsequently applying a technique that constraints the coefficient estimates, or shrinks them towards zero (ISLR, 2007).</p>
+<p>The Lasso method works by slightly modifying the objective function that is minimized during an ordinary linear regression. Namely, Lasso minimizes:</p>
+<p><span class="math display">\[
+\sum_{i=1}^N \left(y_i - \beta_0 - \sum_{j=1}^p \beta_jx_{ij} \right)^2 + \lambda\sum_{j=1}^p|\beta_j|
+\]</span></p>
+<p>The $l-1 $ penalty applied by the Lasso forces some of the coefficients to go to 0 when the tuning parameter <span class="math inline">\(\lambda\)</span> is sufficiently large.</p>
+<p>Cross-validation provides us with a way to select the best parameter <span class="math inline">\(\lambda\)</span>. A grid of values is chosen and then we run cross-validation error for each value of <span class="math inline">\(\lambda\)</span>.</p>
+<pre class="r"><code># Define search grid
+grid &lt;- 10^seq(1,-3, length = 100)
+predMat &lt;- as.matrix(pred)
+
+lasso.mod &lt;- glmnet(x=predMat,y=Y,alpha = 1, lambda = grid, standardize = FALSE)
+plot(lasso.mod)</code></pre>
+<p><img src="/posts/2018-01-16-classifying-ct-scan-images-using-machine-learning_files/figure-html/unnamed-chunk-17-1.png" width="672" /></p>
+<p>We can identify optimal <span class="math inline">\(\lambda\)</span> using cross-validation.</p>
+<pre class="r"><code>cv.out &lt;- cv.glmnet (predMat,Y,alpha =1)
+plot(cv.out)</code></pre>
+<p><img src="/posts/2018-01-16-classifying-ct-scan-images-using-machine-learning_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
+<pre class="r"><code>(bestlam &lt;- cv.out$lambda.min)</code></pre>
+<pre><code>## [1] 0.004954309</code></pre>
+<pre class="r"><code>lasso.pred &lt;- predict(lasso.mod, s=bestlam , newx = predMat)
+lassoMSE &lt;- mean((lasso.pred-Y)^2)</code></pre>
+<pre class="r"><code>lasso.final &lt;- glmnet(x = predMat, y = Y, alpha = 1, lambda = bestlam, standardize = FALSE)
+lassoR2 &lt;- lasso.final$dev.ratio
+lassoParam &lt;- nnzero(lasso.final$beta)</code></pre>
+<pre class="r"><code>lassoMod_characteristics &lt;- data.frame(AIC = NA, 
+                                   R2 = lassoR2,
+                                   MSE = lassoMSE,
+                                   Predictors = lassoParam, row.names =&quot;Lasso&quot;)
+lassoMod_characteristics</code></pre>
+<pre><code>##       AIC        R2      MSE Predictors
+## Lasso  NA 0.8629356 68.46576        311</code></pre>
+</div>
+<div id="regression-tree-method" class="section level2">
+<h2>1.5. Regression Tree Method</h2>
+<p>Apply regression tree method method as explained in the lecture. Estimate its predictive quality using 10-fold cross validation.</p>
+<pre class="r"><code># Assign arbitrarily small cp value to grow tree
+treemod &lt;- rpart(formula = reference~., data = dat[,-1], control = rpart.control(cp=10^-8, xval=10))</code></pre>
+<p>At this point we may look at the cross-validation error to prune the tree to a stable level</p>
+<pre class="r"><code>plotcp(treemod)</code></pre>
+<p><img src="/posts/2018-01-16-classifying-ct-scan-images-using-machine-learning_files/figure-html/unnamed-chunk-23-1.png" width="672" /></p>
+<pre class="r"><code>(best.CP = treemod$cptable[which.min(treemod$cptable[,&quot;xerror&quot;]),&quot;CP&quot;])</code></pre>
+<pre><code>## [1] 1.018291e-08</code></pre>
+<p>We note here that cp value is not a useful indicator in determining the pruning level since it seems that the cross-validation error keeps on decreasing indefinitely. Thus an arbitrary prunning value will be used. To maintain comparability, a cp which yields an MSE in the range of the linear model is chosen. This way we will be able to at least compare the complexity of the models.</p>
+<pre class="r"><code>prunedTree &lt;- prune(treemod, cp = 4*10^-3)
+(TreeMSE &lt;- mean((predict(prunedTree) - Y)^2))</code></pre>
+<pre><code>## [1] 59.02916</code></pre>
+<pre class="r"><code>rsq.rpart(prunedTree)</code></pre>
+<pre><code>## 
+## Regression tree:
+## rpart(formula = reference ~ ., data = dat[, -1], control = rpart.control(cp = 10^-8, 
+##     xval = 10))
+## 
+## Variables actually used in tree construction:
+##  [1] value103 value114 value116 value118 value136 value160 value173
+##  [8] value18  value181 value215 value221 value237 value256 value258
+## [15] value273 value3   value331 value348 value378 value4   value40 
+## [22] value63  value8  
+## 
+## Root node error: 26716881/53500 = 499.38
+## 
+## n= 53500 
+## 
+##           CP nsplit rel error  xerror      xstd
+## 1  0.3232420      0   1.00000 1.00002 0.0046312
+## 2  0.1993409      1   0.67676 0.67677 0.0033512
+## 3  0.1141054      2   0.47742 0.47818 0.0032928
+## 4  0.0456717      3   0.36331 0.36545 0.0031853
+## 5  0.0253257      4   0.31764 0.32022 0.0031815
+## 6  0.0250367      5   0.29231 0.29841 0.0028908
+## 7  0.0180014      6   0.26728 0.27046 0.0027470
+## 8  0.0143320      7   0.24928 0.25286 0.0027207
+## 9  0.0137972      8   0.23494 0.24455 0.0026367
+## 10 0.0129026      9   0.22115 0.22286 0.0025650
+## 11 0.0114737     10   0.20824 0.20603 0.0024992
+## 12 0.0113797     11   0.19677 0.20394 0.0024836
+## 13 0.0083171     12   0.18539 0.19073 0.0024690
+## 14 0.0064825     13   0.17707 0.18150 0.0024326
+## 15 0.0059180     14   0.17059 0.17529 0.0023880
+## 16 0.0055147     15   0.16467 0.17181 0.0023724
+## 17 0.0051604     16   0.15916 0.16616 0.0023368
+## 18 0.0051378     17   0.15400 0.16318 0.0023297
+## 19 0.0046657     18   0.14886 0.15393 0.0022853
+## 20 0.0043835     19   0.14419 0.14320 0.0022341
+## 21 0.0043718     20   0.13981 0.13893 0.0021900
+## 22 0.0042887     23   0.12670 0.13743 0.0021867
+## 23 0.0042024     24   0.12241 0.12985 0.0021763
+## 24 0.0040000     25   0.11820 0.12876 0.0021631</code></pre>
+<p><img src="/posts/2018-01-16-classifying-ct-scan-images-using-machine-learning_files/figure-html/unnamed-chunk-25-1.png" width="672" /><img src="/posts/2018-01-16-classifying-ct-scan-images-using-machine-learning_files/figure-html/unnamed-chunk-25-2.png" width="672" /></p>
+<pre class="r"><code>TreeNPred &lt;- 23
+SStot &lt;- sum((Y-mean(Y))^2)
+SSres &lt;- sum(resid(prunedTree)^2)
+TreeR2 &lt;- 1 - SSres/SStot </code></pre>
+<p>Create vector of characteristics of the fit: <span class="math inline">\(R^2\)</span>, MSE, number of predictors in the model.</p>
+<pre class="r"><code>tree_characteristics &lt;- data.frame(AIC = NA, 
+                                   R2 = TreeR2,
+                                   MSE = TreeMSE,
+                                   Predictors = TreeNPred, row.names =&quot;Tree&quot;)</code></pre>
+<p>Compare fits of the four methods.</p>
+<p>A final summary of characteristics will be:</p>
+<pre class="r"><code>rbind(lmod_characteristics,lmodPCR_characteristics, lassoMod_characteristics, tree_characteristics)</code></pre>
+<pre><code>##                   AIC        R2      MSE Predictors
+## Linear Model 378103.3 0.8638282 68.00158        265
+## PCR          387000.8 0.8383823 80.70880        130
+## Lasso              NA 0.8629356 68.46576        311
+## Tree               NA 0.8817953 59.02916         23</code></pre>
+<p>For this exercise, it appears that the Tree model vastly outperforms any of the other regression methods. It has a significantly lower number of predictors, coupled with better performance. Lasso yields a very similar model to the reduced linear, however it is more complex by about 60 extra predictors. PCR is valuable for its customizability.</p>
+<p><em>Acknowledgements</em></p>
+<p>Original dataset was downloaded from UCI Machine learning Repository</p>
+<p>Lichman, M. (2013). UCI Machine Learning Repository [<a href="http://archive.ics.uci.edu/ml" class="uri">http://archive.ics.uci.edu/ml</a>]. Irvine, CA: University of California, School of Information and Computer Science.</p>
+</div>

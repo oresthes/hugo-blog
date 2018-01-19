@@ -1,0 +1,312 @@
+---
+title: Classifying CT-Scan images using machine learning
+author: Orest Alickolli
+date: '2017-10-16'
+slug: classifying-ct-scan-images-using-machine-learning
+description: "The aim of the project is to identify the location of a CT slice along the vertical axis of the human body."
+categories:
+  - R
+tags:
+  - Machine Learning
+  - Decision Trees
+  - Linear Regression
+---
+
+
+This project is associated with Kaggle competition https://www.kaggle.com/uciml/ct-slice-localization and was a part of the final project of the Machine Learning class at The University of Chicago. 
+
+The aim of the project is to identify the location of a CT slice along the vertical axis of the human body.
+
+The data contain 384 features extracted from 53,500 CT images from 74 patients.
+Each record characterizes a slice of an image.
+Each CT slice is described by two histograms in polar space. The first histogram describes the location of bone structures in the image, the second the location of air inclusions inside of the body.
+Both histograms are concatenated to form the final feature vector of length 384.
+The class output variable is numeric and denotes the relative location of the CT slice on the axial axis of the human body.
+
+The column information:
+
+1: PatientId: Each ID identifies a different patient
+2 - 241: Histogram describing bone structures
+242 - 385: Histogram describing air inclusions
+
+386: Reference: Relative location of the image on the axial axis (class value). Values are in the range [0; 180] where 0 denotes the top of the head and 180 the soles of the feet.
+
+It is important to predict location of the slice using the features because when 2 or more scans are compared or in general it is necessary to navigate to a certain part of the body, the whole scan (about 1 Gb) needs to be loaded over clinical network and then the required slice is usually identified manually. 
+
+## Data
+
+
+Read the data and do exploratory analysis.
+
+```{r}
+datapath <- "~/Desktop/Machine Learning/Course Project"
+dat <- read.csv(file=paste(datapath,"slice_localization_data.csv",sep="/"))
+c(head(colnames(dat)),tail(colnames(dat)))
+```
+
+```{r}
+pred <- dat[,c(-1,-386)]
+Y <- dat[,386]
+c(head(colnames(pred)),tail(colnames(pred)))
+```
+
+```{r}
+plot(Y)
+summary(Y)
+hist(Y)
+```
+
+Check for normality
+
+```{r}
+qqnorm(Y)
+qqline(Y)
+```
+
+Any formal test of normality will, of course, fail.
+
+Load libraries
+
+```{r}
+require(magrittr)
+require(plyr)
+require(dplyr)
+require(ggplot2)
+require(glmnet)
+require(rpart)
+require(rpart.plot)
+```
+
+
+
+## 1.2. Linear model
+
+Fit linear model with all predictors. 
+
+```{r}
+lmod <- lm(formula = reference~., data = dat[,-1])
+summary(lmod)%>%attributes()
+# Extract R-squared for full lineaar model
+summary(lmod)$r.squared
+```
+
+Remove predictors insignificant with 5% level and predictors returning NA as coefficients.
+
+```{r}
+# Extract Table of Coefficients
+lmod_coef <- lmod%>%summary%>%coefficients
+anyNA(lmod_coef[,1])
+```
+No NA's are present in the list of coefficients. 
+
+Remove insignificant predictors
+```{r}
+lmod_sigcoef <- lmod_coef[lmod_coef[,4]<0.05,]
+subset_coef <- rownames(lmod_sigcoef)[-1] #Remove Intercept
+```
+
+Fit reduced linear model.
+
+```{r}
+Red.Frame <- data.frame(reference = dat$reference, dat%>%select_(.dots = subset_coef))
+lmod_reduced <- lm(formula = reference~., data = Red.Frame)
+```
+
+Create vector of characteristics of the fit: AIC, $R^2$, MSE, number of predictors in the model.
+
+```{r}
+lmod_characteristics <- data.frame(AIC = AIC(lmod_reduced), 
+                                   R2 = summary(lmod_reduced)$r.squared,
+                                   MSE = mean(lmod_reduced$residuals^2),
+                                   Predictors = nrow(lmod_sigcoef), row.names = c("Linear Model"))
+lmod_characteristics
+```
+
+The reduction in R-squared is very minimal; the removed columns contain very little predictive power.
+
+
+## 1.3. PCA Method
+Apply PCA regression method as explained in the lecture.
+Create vector of fit characteristics.
+
+PCA is an effective method in the presence of high correlation. The method allows us to identify features which are orthogonal to each other and capture most of the variance in the data. 
+
+The process consists in (adapated from *Faraway, 2014*):
+
+- Finding $u_1$ such that $V(u_1^T X)$ is maximized subject to $u_1^Tu_1=1$. 
+- Finding $u_2$ such that $V(u_2^T X)$ is maximized subject to $u_2^Tu_1=0$ and $u_2^Tu_2=1$. 
+- Continue finding directions of greatest variations which are orthogonal to all previously identified directions until remaining variation is deemed negligible.  
+
+We can then write: $z_i=u_i^TX$. The $z_i$ are known as principal components. In matrix form $Z=XU$, (U can be thought of as a rotation matrix). 
+
+It was shown in Part 1 that a large number of predictors contain very little predictive power. Thus it would not be reasonable to include them in the final PCR which is simply a linear combination of the original predictors. 
+
+```{r}
+data.PC <- prcomp(Red.Frame[,-1])
+Rotation <- as.data.frame(data.PC$rotation)
+Scores <- as.data.frame(data.PC$x)
+```
+
+We can identify based on decomposition above that `rotation` corresponds to matrix U and `x` to Z.
+Summary of decomposition helps see its effectiveness:
+
+The proportion of cumulative varaince explained for every 10 components is:
+```{r}
+cumulative_variance <- summary(data.PC)$importance[3,]
+ten_sequence <- seq(0, length(cumulative_variance), 10)
+cumulative_variance[ten_sequence]
+```
+
+We can see that ~95% cumulative variance in the predictors is contained in half the transformed set of predictors. 
+
+**Principal components regression (PCR)**. Having obtained the new set of orthogonal features we perform a linear rigression with roughly half the number of predictors. 
+
+```{r}
+PCR.Frame <- cbind(reference = dat$reference, Scores)
+lmodPCR <- lm(formula = reference ~ ., data = PCR.Frame[,1:131])
+```
+
+```{r}
+lmodPCR_characteristics <- data.frame(AIC = AIC(lmodPCR), 
+                                   R2 = summary(lmodPCR)$r.squared,
+                                   MSE = mean(lmodPCR$residuals^2),
+                                   Predictors = 130, row.names = "PCR")
+rbind(lmodPCR_characteristics, lmod_characteristics)
+```
+
+Note: There is no way of achieving a higher $R^2$ using PCR, however it is a useful method for simplifying the model.
+
+```{r}
+Compare_Chart <- adply(ten_sequence,1,function(terminal_val){
+  # Fit Linear Model
+  lm_R2 <- summary(lm(reference~., data = Red.Frame[1:(terminal_val+1)]))$r.squared
+  # Fit PCR
+  PCR_R2 <- summary(lm(reference~., data = PCR.Frame[1:(terminal_val+1)]))$r.squared
+  return(data.frame(Reduced_LM=lm_R2, PCR=PCR_R2))
+})
+```
+
+```{r}
+plot(ten_sequence, Compare_Chart$Reduced_LM, type = "l", xlab="Nr. of Predictors", ylab="R-Squared")
+lines(ten_sequence, Compare_Chart$PCR, col="red")
+```
+
+We can see that PCR (red) reaches high R-squared values much sooner than the simple linear model (black). (However, it needs to be mentioned that the linear model's performance in this graph can be improved by ordering the predictors based on their importance using the `realimpo` package).
+
+## 1.4. Lasso Method
+Apply lasso regression as explained in the lecture.
+Create vector of fit characteristics.
+
+Lasso is part of the family of shrinkage methods and is closely associated to Ridge Regression. The method consists in fitting the full model and then subsequently applying a technique that constraints the coefficient estimates, or shrinks them towards zero (ISLR, 2007). 
+
+The Lasso method works by slightly modifying the objective function that is minimized during an ordinary linear regression. Namely, Lasso minimizes: 
+
+$$
+\sum_{i=1}^N \left(y_i - \beta_0 - \sum_{j=1}^p \beta_jx_{ij} \right)^2 + \lambda\sum_{j=1}^p|\beta_j|
+$$
+
+The $l-1 $ penalty applied by the Lasso forces some of the coefficients to go to 0 when the tuning parameter $\lambda$ is sufficiently large. 
+
+Cross-validation provides us with a way to select the best parameter $\lambda$. A grid of values is chosen and then we run cross-validation error for each value of $\lambda$.
+
+```{r}
+# Define search grid
+grid <- 10^seq(1,-3, length = 100)
+predMat <- as.matrix(pred)
+
+lasso.mod <- glmnet(x=predMat,y=Y,alpha = 1, lambda = grid, standardize = FALSE)
+plot(lasso.mod)
+```
+
+We can identify optimal $\lambda$ using cross-validation.
+
+```{r}
+cv.out <- cv.glmnet (predMat,Y,alpha =1)
+plot(cv.out)
+(bestlam <- cv.out$lambda.min)
+```
+
+```{r}
+lasso.pred <- predict(lasso.mod, s=bestlam , newx = predMat)
+lassoMSE <- mean((lasso.pred-Y)^2)
+```
+
+```{r}
+lasso.final <- glmnet(x = predMat, y = Y, alpha = 1, lambda = bestlam, standardize = FALSE)
+lassoR2 <- lasso.final$dev.ratio
+lassoParam <- nnzero(lasso.final$beta)
+```
+
+
+```{r}
+lassoMod_characteristics <- data.frame(AIC = NA, 
+                                   R2 = lassoR2,
+                                   MSE = lassoMSE,
+                                   Predictors = lassoParam, row.names ="Lasso")
+lassoMod_characteristics
+```
+
+
+## 1.5. Regression Tree Method
+Apply regression tree method method as explained in the lecture. Estimate its predictive quality using 10-fold cross validation. 
+
+```{r}
+# Assign arbitrarily small cp value to grow tree
+treemod <- rpart(formula = reference~., data = dat[,-1], control = rpart.control(cp=10^-8, xval=10))
+```
+
+At this point we may look at the cross-validation error to prune the tree to a stable level
+
+```{r}
+plotcp(treemod)
+(best.CP = treemod$cptable[which.min(treemod$cptable[,"xerror"]),"CP"])
+```
+
+We note here that cp value is not a useful indicator in determining the pruning level since it seems that the cross-validation error keeps on decreasing indefinitely. Thus an arbitrary prunning value will be used. To maintain comparability, a cp which yields an MSE in the range of the linear model is chosen. This way we will be able to at least compare the complexity of the models. 
+
+```{r}
+prunedTree <- prune(treemod, cp = 4*10^-3)
+(TreeMSE <- mean((predict(prunedTree) - Y)^2))
+```
+
+```{r}
+rsq.rpart(prunedTree)
+```
+
+
+
+```{r}
+TreeNPred <- 23
+SStot <- sum((Y-mean(Y))^2)
+SSres <- sum(resid(prunedTree)^2)
+TreeR2 <- 1 - SSres/SStot 
+```
+
+
+Create vector of characteristics of the fit: $R^2$, MSE, number of predictors in the model.
+
+```{r}
+tree_characteristics <- data.frame(AIC = NA, 
+                                   R2 = TreeR2,
+                                   MSE = TreeMSE,
+                                   Predictors = TreeNPred, row.names ="Tree")
+```
+
+Compare fits of the four methods.
+
+A final summary of characteristics will be:
+
+```{r}
+rbind(lmod_characteristics,lmodPCR_characteristics, lassoMod_characteristics, tree_characteristics)
+```
+
+For this exercise, it appears that the Tree model vastly outperforms any of the other regression methods. It has a significantly lower number of predictors, coupled with better performance. Lasso yields a very similar model to the reduced 
+linear, however it is more complex by about 60 extra predictors. PCR is valuable for its customizability. 
+
+*Acknowledgements*
+
+Original dataset was downloaded from UCI Machine learning Repository
+
+Lichman, M. (2013). UCI Machine Learning Repository [http://archive.ics.uci.edu/ml]. Irvine, CA: University of California, School of Information and Computer Science.
+
+

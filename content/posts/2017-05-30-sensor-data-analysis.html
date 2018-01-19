@@ -2,6 +2,9 @@
 title: Sensor Data Analysis
 author: Orest Alickolli
 date: '2017-05-30'
+output:
+  blogdown::html_page:
+    toc: true
 slug: sensor-data-analysis
 categories:
   - R
@@ -12,9 +15,25 @@ tags:
 ---
 
 
+<div id="TOC">
+<ul>
+<li><a href="#data">Data</a></li>
+<li><a href="#create-counting-process-explore-cumulative-intensity">Create Counting Process, Explore Cumulative Intensity</a></li>
+<li><a href="#explore-cumulative-intensity-of-the-process.">Explore cumulative intensity of the process.</a></li>
+<li><a href="#check-for-over-dispersion">Check for over-dispersion</a></li>
+<li><a href="#methods-for-testing-over-dispersion.">4.1 Methods for testing over-dispersion.</a><ul>
+<li><a href="#a-quick-and-rough-method.">4.1.1 A quick and rough method.</a></li>
+<li><a href="#regression-test-by-cameron-trivedi">4.1.2 Regression Test by Cameron-Trivedi</a></li>
+<li><a href="#test-against-negative-binomial-distribution">4.1.3 Test against Negative Binomial Distribution</a></li>
+</ul></li>
+<li><a href="#find-the-distribution-of-poisson-intensity.">5. Find the distribution of Poisson intensity.</a><ul>
+<li><a href="#kolmogorov-smirnoff-test">5.1 Kolmogorov-Smirnoff Test</a></li>
+<li><a href="#check-the-distribution-for-the-entire-period.">5.2. Check the distribution for the entire period.</a></li>
+<li><a href="#check-distribution-of-one-minute-periods">5.3. Check distribution of one-minute periods</a></li>
+</ul></li>
+</ul>
+</div>
 
-<div id="introduction---test" class="section level2">
-<h2>Introduction - Test</h2>
 <p>The analytics group of a company is asked to investigate causes of malfunctions in an unspecified technological process of one of the manufacturing plants that results in significant increase of cost for the end product.</p>
 <!--more-->
 <p>One of the suspected reasons for malfunctions is the deviation of temperature during the technological process from optimal levels. The provided log file contains times of malfunctions in seconds since the start of measurement and minute records of temperature.</p>
@@ -32,7 +51,6 @@ suppressMessages(library(magrittr))
 suppressMessages(require(AER))
 suppressMessages(require(MASS))
 suppressMessages(require(pscl))</code></pre>
-</div>
 <div id="data" class="section level2">
 <h2>Data</h2>
 <p>The log of the data looks as follows:</p>
@@ -193,11 +211,11 @@ Test.Deviance.Overdispersion.Poisson(100,1)</code></pre>
 <p>The function simulates a sample from Poisson distribution, estimates parameter <span class="math inline">\(\lambda\)</span> which is simultaneously the mean value and the variance, then it checks if <span class="math inline">\(\frac{Deviance}{Deg.Freedom} - 1\)</span> belongs to the interval <span class="math inline">\((-1.96,1.96]\)</span>. If yes, the result is 1. Otherwise it is 0.</p>
 <p>Now repeat the call of the function 300 times to see how many times it returns one and how many times zero.</p>
 <pre class="r"><code>sum(replicate(300,Test.Deviance.Overdispersion.Poisson(100,1)))</code></pre>
-<pre><code>## [1] 263</code></pre>
+<pre><code>## [1] 267</code></pre>
 <p>The estimate of the parameter <span class="math inline">\(\lambda\)</span> given by <code>glm()</code> is <span class="math inline">\(e^{Coefficient}\)</span> :</p>
 <pre class="r"><code>exp(glm(rpois(1000,2)~1,family=poisson)$coeff)</code></pre>
 <pre><code>## (Intercept) 
-##       1.989</code></pre>
+##       2.059</code></pre>
 <p>Perform the same test on negative binomial data</p>
 <pre class="r"><code>Test.Deviance.Overdispersion.NBinom&lt;-function(Sample.Size,Parameter.prob){
   my.Sample&lt;-rnbinom(Sample.Size,2,Parameter.prob)
@@ -319,7 +337,7 @@ ecdfplot(~ sample1 + sample2, data=Cum.Distr.Functions, auto.key=list(space=&#39
 ##  Two-sample Kolmogorov-Smirnov test
 ## 
 ## data:  sample1 and sample2
-## D = 0.27, p-value = 0.001365
+## D = 0.38, p-value = 1.071e-06
 ## alternative hypothesis: two-sided</code></pre>
 <p><strong>What does this output tell you about equivalence of the two distributions?</strong></p>
 <p><em>Answer:</em> It suggests that the two samples are not sampled from the same distribution, i.e. negating the null hypothesis of the Kolmogorov-Smirnov Test.</p>
@@ -329,7 +347,7 @@ ecdfplot(~ sample1 + sample2, data=Cum.Distr.Functions, auto.key=list(space=&#39
 ##  One-sample Kolmogorov-Smirnov test
 ## 
 ## data:  sample1
-## D = 0.083178, p-value = 0.4934
+## D = 0.095621, p-value = 0.3199
 ## alternative hypothesis: two-sided</code></pre>
 <p><strong>What does this output tell you?</strong></p>
 <p><em>Answer:</em> The null hypothesis that the two samples are drawn from the same distribution cannot be rejected at this level of p-value.</p>
@@ -339,7 +357,7 @@ ecdfplot(~ sample1 + sample2, data=Cum.Distr.Functions, auto.key=list(space=&#39
 ##  One-sample Kolmogorov-Smirnov test
 ## 
 ## data:  sample2
-## D = 0.28805, p-value = 1.242e-07
+## D = 0.36387, p-value = 6.323e-12
 ## alternative hypothesis: two-sided</code></pre>
 </div>
 <div id="check-the-distribution-for-the-entire-period." class="section level2">

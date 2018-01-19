@@ -1,0 +1,183 @@
+---
+title: Interactive plots with Shiny
+author: Orest Alickolli
+date: '2018-01-18'
+categories:
+  - Visualization
+tags:
+  - interactive
+  - visualization
+slug: visualization-shiny-dashboard
+---
+
+This visualization was created as part of a larger academic project at The University of Chicago in conjuction with a partner company in the food retail business. The business model of the company consists in setting up temporary food stands in various office buildings (referred to as **accounts**) and providing a rotating selection of different food **vendors** on different calendar days. 
+Each time such a pairing occurs, it is referred to as an **event**. The event is thus determined by a vendor, an account and the date on which it occurred. 
+
+To help visualize general trends and our modeling efforts I built the an interactive tool using Shiny (see below). Due to the data bein proprietary, I am using a very small set accounts and vendors spread over two cities. Additionally, names of accounts and vendors have been replaced by random numbers. 
+
+The original data contains hundreds of accounts and vendors spread over more than 10 cities. It is at this scale that the utility of the tool becomes more important, as it allowed the team to dig down to individual cases very quickly.
+
+Three different plots are produced which can be accessed by using the tabs at the top. 
+    - The *Vendor Performance* tab contains all the events that the selected vendor has been part of. A *tooltip* functionality is built into so that hoovering over a specific point will give information about the exact amount of sales, the date, and the account where the event took place.  
+    - The *Account Performance* tab is similar to the vendor performance tab, reporting the events associated with the selected account.  
+    - The *Vendor-Peformance* tab isolates only events associated to the selected vendor-account pair.  
+
+Use the drop down menus to select between different vendors and accounts. 
+
+<div id="myiframe">  
+  <iframe height="750" width="950" src="https://alickolli.shinyapps.io/shinyeda/"></iframe>
+<div/>
+
+Source code is shown below:
+
+```{r eval=F}
+library(rsconnect)
+library(shiny)
+library(plotly)
+library(ggplot2)
+library(magrittr)
+
+
+# Pre-processing
+frame <- read.csv('anonymous.csv')
+
+ui <- fluidPage(
+  
+  hr(),
+  tabsetPanel(id="tabs",
+    tabPanel("Vendor Performance", plotlyOutput("plotVendor",width="100%")), 
+    tabPanel("Account Performance", plotlyOutput("plotAccount",width="100%")),
+    tabPanel("Vendor-Account Performance", plotlyOutput("plotPair", width = "100%"))
+  ),
+  
+  fluidRow(
+    
+    conditionalPanel(
+      condition = "input.tabs == 'Vendor Performance' || input.tabs == 'Vendor-Account Performance'" ,
+      column(3,
+             selectInput("vendor", "Select Vendor",
+                         "None"))),
+      
+    conditionalPanel(
+      condition = "input.tabs == 'Account Performance' || input.tabs == 'Vendor-Account Performance'",
+      column(3,        
+              selectInput("account", "Select Account",
+                          "None"))),
+    
+      column(4,
+           selectInput("city", "Select City",
+                       cities))
+  )
+
+)  
+
+server <- function(input, output, session) {
+  
+  observe({
+    city_choice <- input$city
+    
+    city_frame <- frame%>%filter(v_Market == city_choice)
+    vendor_list <- city_frame%>%select(Vendor)%>%unique()
+    account_list <- city_frame%>%select(Account)%>%unique()
+    
+    # Can also set the label and select items
+    updateSelectInput(session, "vendor",
+                      label = "Select Vendor",
+                      choices = vendor_list)
+    
+    updateSelectInput(session, "account",
+                      label = "Select Account",
+                      choices = account_list)
+    
+  })
+  
+  
+  
+  ExtractVA = function(x) {
+    vendor = x[1]
+    account = x[2]
+    
+    # Extract frames
+    vendor_frame <- frame%>%filter(Vendor == vendor)
+    account_frame <- frame%>%filter(Account == account)
+    pair_frame <- frame%>%filter(Vendor==vendor, Account == account)
+    res = list(vendor_frame, account_frame, pair_frame)
+  }
+  
+  data <- reactive({
+    #Get inputs
+    matrix(c(input$vendor,
+             input$account,
+             input$city))
+  })
+  
+  #Account plot
+  
+  output$plotAccount <- renderPlotly({
+    account_frame <- ExtractVA(data())[[2]]
+     
+    p <- ggplot(data = account_frame, aes(x = Date, y = Gross.food.sales,
+                        text = paste("Vendor : ", Vendor,
+                                     '<br>Date: ', as.Date(Date),
+                                     '<br>Sales ($): ', Gross.food.sales))) +
+      geom_point(size = 2) +
+      scale_x_date(date_breaks = "1 month", date_labels =  "%b %y") +
+      xlab(" ") + ylab("Sales (USD)") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    
+    ip <- ggplotly(p, tooltip = c("text"))
+    
+  })
+  
+  #Vendor plot
+  output$plotVendor <- renderPlotly({
+    vendor_frame <- ExtractVA(data())[[1]]
+    
+    p <- ggplot(data = vendor_frame, aes(x = Date, y = Gross.food.sales,
+                        text = paste("Account : ", Account,
+                        '<br>Date: ', as.Date(Date),
+                        '<br>Sales ($): ', Gross.food.sales))) +
+      geom_point(size =2) +
+      scale_x_date(date_breaks = "1 month", date_labels =  "%b %y") +
+      xlab(" ") + ylab("Sales (USD)") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+      
+    
+    ip <- ggplotly(p, tooltip = c("text"))
+    
+  })
+  
+
+  #Pairs plot
+  output$plotPair <- renderPlotly({
+    pair_frame <- ExtractVA(data())[[3]]
+    account_frame <- ExtractVA(data())[[1]]
+    vendor_frame <- ExtractVA(data())[[2]]
+    
+    account_mean <- mean(account_frame$Gross.food.sales)
+    vendor_mean <- mean(vendor_frame$Gross.food.sales)
+      
+      
+    p <- ggplot(data = pair_frame, aes(x = Date, y = Gross.food.sales,
+                            text = paste('Date: ', as.Date(Date),
+                            '<br>Sales ($): ', Gross.food.sales))) +
+      geom_point() +
+      scale_x_date(date_breaks = "1 month", date_labels =  "%b %y") +
+      xlab(" ") + ylab("Sales(USD)") + 
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    
+    ip <- ggplotly(p, tooltip = "text")
+  })
+  
+  
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+
+
+

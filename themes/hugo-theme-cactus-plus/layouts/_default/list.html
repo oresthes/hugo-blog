@@ -2,7 +2,7 @@
 	<body>
 	{{ partial "nav.html" . }}
 	{{ partial "profile.html" . }}
-
+  
 	<section id="wrapper" class="home">
 		{{ range .Data.Pages.GroupByDate "2006" }}
 		<div class="archive">
@@ -28,3 +28,4 @@
 	{{ partial "js.html" . }}
 	</body>
 </html>
+

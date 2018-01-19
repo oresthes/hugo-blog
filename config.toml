@@ -1,7 +1,7 @@
 # Site settings
 baseurl = "/"
 languageCode = "en"
-title = ""
+title = "Random (f)Orest"
 theme = "hugo-theme-cactus-plus"
 googleAnalytics = "your_google_analytics_id"
 # Set the value to true if your site include CJK (Chinese, Japanese, and Korean languages) characters
@@ -16,10 +16,10 @@ hasCJKLanguage = false
 	twitter = "your_twitter_id"
 	facebook = "your_facebook_id"
 
-	enableRSS = true
+	enableRSS = false
 	enableToc = true
 
-	enableDisqus = true
+	enableDisqus = false
 	disqusShortname = "your_disqus_short_name"
 
 

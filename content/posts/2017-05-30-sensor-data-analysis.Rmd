@@ -2,6 +2,9 @@
 title: Sensor Data Analysis
 author: Orest Alickolli
 date: '2017-05-30'
+output:
+  blogdown::html_page:
+    toc: true
 slug: sensor-data-analysis
 categories:
   - R
@@ -11,7 +14,7 @@ tags:
   - Count
 ---
 
-## Introduction - Test
+
 
 The analytics group of a company is asked to investigate causes of malfunctions in an unspecified technological process of one of the manufacturing plants that results in significant increase of cost for the end product. 
 
