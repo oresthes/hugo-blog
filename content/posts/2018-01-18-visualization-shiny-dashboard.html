@@ -12,16 +12,17 @@ slug: visualization-shiny-dashboard
 
 
 
-<p>This visualization was created as part of a larger academic project at The University of Chicago in conjuction with a partner company in the food retail business. The business model of the company consists in setting up temporary food stands in various office buildings (referred to as <strong>accounts</strong>) and providing a rotating selection of different food <strong>vendors</strong> on different calendar days. Each time such a pairing occurs, it is referred to as an <strong>event</strong>. The event is thus determined by a vendor, an account and the date on which it occurred.</p>
-<p>To help visualize general trends and our modeling efforts I built the an interactive tool using Shiny (see below). Due to the data bein proprietary, I am using a very small set accounts and vendors spread over two cities. Additionally, names of accounts and vendors have been replaced by random numbers.</p>
-<p>The original data contains hundreds of accounts and vendors spread over more than 10 cities. It is at this scale that the utility of the tool becomes more important, as it allowed the team to dig down to individual cases very quickly.</p>
+<p>This visualization was created as part of a larger academic project at The University of Chicago in conjunction with a partner company in the food retail business. The business model of the company consists in setting up temporary food stands in various office buildings (referred to as <strong>accounts</strong>) and providing a rotating selection of different food <strong>vendors</strong> on different calendar days. Each time such a pairing occurs, it is referred to as an <strong>event</strong>. The event is thus determined by a vendor, an account and the date on which it occurred.</p>
+<p>To better understand the data and help our modeling efforts, I built an interactive tool using Shiny (see below). Due to the data being proprietary, I am using a very small set of accounts and vendors spread over two cities. Additionally, names of accounts and vendors have been replaced by random numbers.</p>
+<p>The original data contains hundreds of accounts and vendors spread over more than 10 cities. It is at this scale that the utility of the tool becomes even more important, as it allowed the team to dig down to individual cases very quickly.</p>
 <p>Three different plots are produced which can be accessed by using the tabs at the top. - The <em>Vendor Performance</em> tab contains all the events that the selected vendor has been part of. A <em>tooltip</em> functionality is built into so that hoovering over a specific point will give information about the exact amount of sales, the date, and the account where the event took place.<br />
 - The <em>Account Performance</em> tab is similar to the vendor performance tab, reporting the events associated with the selected account.<br />
-- The <em>Vendor-Peformance</em> tab isolates only events associated to the selected vendor-account pair.</p>
+- The <em>Vendor-Account Peformance</em> tab isolates only events associated to the selected vendor-account pair.</p>
 <p>Use the drop down menus to select between different vendors and accounts.</p>
 <div id="myiframe">
 <iframe height="750" width="950" src="https://alickolli.shinyapps.io/shinyeda/"></iframe>
 <div/>
+
 
 <p>Source code is shown below:</p>
 <pre class="r"><code>library(rsconnect)
