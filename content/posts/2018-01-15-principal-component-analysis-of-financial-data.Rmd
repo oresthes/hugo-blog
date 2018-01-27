@@ -7,42 +7,44 @@ categories:
 tags:
   - PCA
   - TimeSeries
+  - Linear Regression
 slug: principal-component-analysis-of-financial-data
 ---
 
-Data from the part 30 years regarding yields of US Treasury bonds of different maturities have been collected. In this project, we deliberately explore the data to study correlation effects in linear predictors and the use of PCA to reduce dimensionality. We will be able to create through PCA a two-dimensional tableau and explore historical events in it. 
+Data from the past 30 years regarding yields of US Treasury bonds of multiple maturities have been collected. In this project, we deliberately explore the data to study correlation effects in linear predictors and then use PCA to reduce the dimensionality of the problem. We will be able to create through PCA a two-dimensional tableau and explore historical events in it. 
 
 
-Read the data and visualize
-
-```{r}
+# Data
+```{r echo=FALSE}
 datapath<-"/Users/Orest/Desktop/Statistical Analysis/Final Project"
 AssignmentData<- read.csv(file = paste(datapath,"RegressionAssignmentData2014.csv",sep="/"),
            row.names=1,header=TRUE,sep=",")
 head(AssignmentData)
+treasury_data <-AssignmentData
 ```
 
-The first 7 variables (input variables) are the daily records of the US Treasury yields to maturity.  
-Plot the input variables.
+The first 7 variables (input variables) are the daily records of the US Treasury yields to maturity (%).  
+Let's observe the time trend. 
 
 ```{r}
-matplot(AssignmentData[,-c(8,9,10)],type='l')
+head(treasury_data[,1:7])
+matplot(AssignmentData[,-c(8,9,10)],type='l', xlab = "Elapsed Trading Days", ylab = "YTM(%)")
 ```
 
-Plot the input variables together with the output variable.
+An unidentified variable is also present in the dataset. It is shown below plotted alongside the yield-to-maturity rates of the treasury bonds.
 
 ```{r}
-matplot(AssignmentData[,-c(9,10)],type='l')
+matplot(treasury_data[,-c(9,10)],type='l', xlab = "Elapsed Trading Days", ylab = "YTM(%)")
 ```
 
-# Step 2
+# Linear Regression Model to predict Output using YTM
 
-Estimate simple regression model with each of the input variables and the output variable given in AssignmentData. Store coefficients for each input variable.
+Estimate simple regression model with each of the input variables and the output variable given in the dataset. Store coefficients for each input variable.
 
 The following code gives an example of the analysis for the first input variable.
 
 ```{r}
-Input1.linear.Model <- lm(Output1~USGG3M, AssignmentData)
+Input1.linear.Model <- lm(Output1~USGG3M, treasury_data)
 Coefficients.Input1 <- Input1.linear.Model$coefficients
 summary(Input1.linear.Model)
 ```
@@ -54,9 +56,9 @@ matplot(AssignmentData[,8],type="l",xaxt="n")
 lines(Input1.linear.Model$fitted.values,col="red")
 ```
 
-Check relevance of the estimated parameters and the model as a whole, amount of correlation explained.  
+## Relevance of the estimated parameters and the model as a whole, amount of correlation explained.  
 
-**Answer:** The intercept and slope are both significant parameters in the linear regression model between the Output variable and the YTM for the 3M Treasury Bill.  
+The intercept and slope are both significant parameters in the linear regression model between the Output variable and the YTM for the 3M Treasury Bill.  
 This is indicated by:  
 * p-values -  The p-values shown are assiocated with the t-test which evaluates the null hypothesis:  
 $H_0$ : Parameter $B_i$ is equal to 0.
@@ -86,7 +88,7 @@ rownames(All.Parameters) <- c("Intercept","Slope")
 All.Parameters
 ```
 
-# Step 3
+# Linear Regression model using Output to predict Yield
 
 Fit linear regression models using single output (column 8 Output1) as input and each of the original inputs as outputs.
 Collect all slopes and  intercepts in one table and print this table.
@@ -99,7 +101,7 @@ rownames(All.Parameters.Inverse) <- c("Intercept","Slope")
 All.Parameters.Inverse
 ```
 
-# Step 4
+# Logistic Regression to predict tightening and easing cycles. 
 
 Estimate logistic regression using all inputs and the data on FED tightening and easing cycles.
 

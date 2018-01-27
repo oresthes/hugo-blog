@@ -7,17 +7,15 @@ categories:
 tags:
   - PCA
   - TimeSeries
+  - Linear Regression
 slug: principal-component-analysis-of-financial-data
 ---
 
 
 
-<p>Data from the part 30 years regarding yields of US Treasury bonds of different maturities have been collected. In this project, we deliberately explore the data to study correlation effects in linear predictors and the use of PCA to reduce dimensionality. We will be able to create through PCA a two-dimensional tableau and explore historical events in it.</p>
-<p>Read the data and visualize</p>
-<pre class="r"><code>datapath&lt;-&quot;/Users/Orest/Desktop/Statistical Analysis/Final Project&quot;
-AssignmentData&lt;- read.csv(file = paste(datapath,&quot;RegressionAssignmentData2014.csv&quot;,sep=&quot;/&quot;),
-           row.names=1,header=TRUE,sep=&quot;,&quot;)
-head(AssignmentData)</code></pre>
+<p>Data from the past 30 years regarding yields of US Treasury bonds of multiple maturities have been collected. In this project, we deliberately explore the data to study correlation effects in linear predictors and then use PCA to reduce the dimensionality of the problem. We will be able to create through PCA a two-dimensional tableau and explore historical events in it.</p>
+<div id="data" class="section level1">
+<h1>Data</h1>
 <pre><code>##           USGG3M USGG6M USGG2YR USGG3YR USGG5YR USGG10YR USGG30YR  Output1
 ## 1/5/1981   13.52  13.09  12.289   12.28  12.294   12.152   11.672 18.01553
 ## 1/6/1981   13.58  13.16  12.429   12.31  12.214   12.112   11.672 18.09140
@@ -32,23 +30,32 @@ head(AssignmentData)</code></pre>
 ## 1/8/1981      NA         NA
 ## 1/9/1981      NA         NA
 ## 1/12/1981     NA         NA</code></pre>
-<p>The first 7 variables (input variables) are the daily records of the US Treasury yields to maturity.<br />
-Plot the input variables.</p>
-<pre class="r"><code>matplot(AssignmentData[,-c(8,9,10)],type=&#39;l&#39;)</code></pre>
+<p>The first 7 variables (input variables) are the daily records of the US Treasury yields to maturity (%).<br />
+Let’s observe the time trend.</p>
+<pre class="r"><code>head(treasury_data[,1:7])</code></pre>
+<pre><code>##           USGG3M USGG6M USGG2YR USGG3YR USGG5YR USGG10YR USGG30YR
+## 1/5/1981   13.52  13.09  12.289   12.28  12.294   12.152   11.672
+## 1/6/1981   13.58  13.16  12.429   12.31  12.214   12.112   11.672
+## 1/7/1981   14.50  13.90  12.929   12.78  12.614   12.382   11.892
+## 1/8/1981   14.76  14.00  13.099   12.95  12.684   12.352   11.912
+## 1/9/1981   15.20  14.30  13.539   13.28  12.884   12.572   12.132
+## 1/12/1981  15.22  14.23  13.179   12.94  12.714   12.452   12.082</code></pre>
+<pre class="r"><code>matplot(AssignmentData[,-c(8,9,10)],type=&#39;l&#39;, xlab = &quot;Elapsed Trading Days&quot;, ylab = &quot;YTM(%)&quot;)</code></pre>
 <p><img src="/posts/2018-01-15-principal-component-analysis-of-financial-data_files/figure-html/unnamed-chunk-2-1.png" width="672" /></p>
-<p>Plot the input variables together with the output variable.</p>
-<pre class="r"><code>matplot(AssignmentData[,-c(9,10)],type=&#39;l&#39;)</code></pre>
+<p>An unidentified variable is also present in the dataset. It is shown below plotted alongside the yield-to-maturity rates of the treasury bonds.</p>
+<pre class="r"><code>matplot(treasury_data[,-c(9,10)],type=&#39;l&#39;, xlab = &quot;Elapsed Trading Days&quot;, ylab = &quot;YTM(%)&quot;)</code></pre>
 <p><img src="/posts/2018-01-15-principal-component-analysis-of-financial-data_files/figure-html/unnamed-chunk-3-1.png" width="672" /></p>
-<div id="step-2" class="section level1">
-<h1>Step 2</h1>
-<p>Estimate simple regression model with each of the input variables and the output variable given in AssignmentData. Store coefficients for each input variable.</p>
+</div>
+<div id="linear-regression-model-to-predict-output-using-ytm" class="section level1">
+<h1>Linear Regression Model to predict Output using YTM</h1>
+<p>Estimate simple regression model with each of the input variables and the output variable given in the dataset. Store coefficients for each input variable.</p>
 <p>The following code gives an example of the analysis for the first input variable.</p>
-<pre class="r"><code>Input1.linear.Model &lt;- lm(Output1~USGG3M, AssignmentData)
+<pre class="r"><code>Input1.linear.Model &lt;- lm(Output1~USGG3M, treasury_data)
 Coefficients.Input1 &lt;- Input1.linear.Model$coefficients
 summary(Input1.linear.Model)</code></pre>
 <pre><code>## 
 ## Call:
-## lm(formula = Output1 ~ USGG3M, data = AssignmentData)
+## lm(formula = Output1 ~ USGG3M, data = treasury_data)
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
@@ -73,8 +80,9 @@ summary(Input1.linear.Model)</code></pre>
 <pre class="r"><code>matplot(AssignmentData[,8],type=&quot;l&quot;,xaxt=&quot;n&quot;)
 lines(Input1.linear.Model$fitted.values,col=&quot;red&quot;)</code></pre>
 <p><img src="/posts/2018-01-15-principal-component-analysis-of-financial-data_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
-<p>Check relevance of the estimated parameters and the model as a whole, amount of correlation explained.</p>
-<p><strong>Answer:</strong> The intercept and slope are both significant parameters in the linear regression model between the Output variable and the YTM for the 3M Treasury Bill.<br />
+<div id="relevance-of-the-estimated-parameters-and-the-model-as-a-whole-amount-of-correlation-explained." class="section level2">
+<h2>Relevance of the estimated parameters and the model as a whole, amount of correlation explained.</h2>
+<p>The intercept and slope are both significant parameters in the linear regression model between the Output variable and the YTM for the 3M Treasury Bill.<br />
 This is indicated by:<br />
 * p-values - The p-values shown are assiocated with the t-test which evaluates the null hypothesis:<br />
 <span class="math inline">\(H_0\)</span> : Parameter <span class="math inline">\(B_i\)</span> is equal to 0. Since both p-values are close to 0 and below any reasonable significance level, we can reject the null hypothesis and conclude that the two parameters are significant (different from 0.).<br />
@@ -97,8 +105,9 @@ All.Parameters</code></pre>
 ## Intercept -18.063370 -21.085905
 ## Slope       2.786991   3.069561</code></pre>
 </div>
-<div id="step-3" class="section level1">
-<h1>Step 3</h1>
+</div>
+<div id="linear-regression-model-using-output-to-predict-yield" class="section level1">
+<h1>Linear Regression model using Output to predict Yield</h1>
 <p>Fit linear regression models using single output (column 8 Output1) as input and each of the original inputs as outputs. Collect all slopes and intercepts in one table and print this table.</p>
 <pre class="r"><code>All.Linear.Models.Inverse &lt;- apply(AssignmentData[,1:7], 2, function(x) lm(x~AssignmentData$Output1))
 All.Parameters.Inverse &lt;- rbind.data.frame(lapply(All.Linear.Models.Inverse, coefficients))
@@ -112,8 +121,8 @@ All.Parameters.Inverse</code></pre>
 ## Intercept 6.8693554
 ## Slope     0.3047124</code></pre>
 </div>
-<div id="step-4" class="section level1">
-<h1>Step 4</h1>
+<div id="logistic-regression-to-predict-tightening-and-easing-cycles." class="section level1">
+<h1>Logistic Regression to predict tightening and easing cycles.</h1>
 <p>Estimate logistic regression using all inputs and the data on FED tightening and easing cycles.</p>
 <pre class="r"><code>AssignmentDataLogistic&lt;-data.matrix(AssignmentData,rownames.force=&quot;automatic&quot;)</code></pre>
 <p>Prepare the easing-tightening data. Make the easing column equal to 0 during the easing periods and NA otherwise. Make the tightening column equal to 1 during the tightening periods and NA otherwise.</p>
